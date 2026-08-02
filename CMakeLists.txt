@@ -24,6 +24,8 @@ add_library(tachikoma_ui STATIC
     src/ui/input.cpp
     src/ui/tree_view.cpp
     src/ui/logo.cpp
+    src/ui/command_bar.cpp
+    src/ui/status_bar.cpp
 )
 target_include_directories(tachikoma_ui PUBLIC include)
 target_link_libraries(tachikoma_ui PUBLIC tachikoma_fs)
