@@ -6,9 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable vcpkg manifest mode
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake CACHE STRING "Vcpkg toolchain file")
-
 # Include custom CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 
@@ -41,6 +38,10 @@ target_include_directories(tachikoma_ui PUBLIC ${CURSES_INCLUDE_DIRS})
 add_executable(tachikoma src/app/main.cpp)
 target_link_libraries(tachikoma PRIVATE tachikoma_ui tachikoma_fs)
 target_compile_features(tachikoma PRIVATE cxx_std_20)
+
+# Testing
+enable_testing()
+add_subdirectory(tests)
 
 # Install targets
 install(TARGETS tachikoma DESTINATION bin)

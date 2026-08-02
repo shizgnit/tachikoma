@@ -52,14 +52,14 @@ void Terminal::shutdown() {
 
 void Terminal::clear() {
     if (initialized_) {
-        clear();
-        refresh();
+        ::clear();
+        ::refresh();
     }
 }
 
 void Terminal::refresh() {
     if (initialized_) {
-        refresh();
+        ::refresh();
     }
 }
 

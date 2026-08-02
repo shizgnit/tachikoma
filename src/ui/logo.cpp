@@ -80,18 +80,18 @@ void render_startup_screen() {
     for (const auto& msg : messages) {
         if (msg_y < term_height) {
             // Color based on prefix
-            int color = 1; // default
+            int cp = 1; // default
             if (msg.find("[SCAN]") != std::string::npos) {
-                color = 6; // blue
+                cp = 6; // blue
             } else if (msg.find("[READY]") != std::string::npos) {
-                color = 2; // green
+                cp = 2; // green
             } else if (msg.find("[ERROR]") != std::string::npos) {
-                color = 5; // red
+                cp = 5; // red
             }
 
-            attron(COLOR_PAIR(color));
+            attron(COLOR_PAIR(cp));
             mvaddstr(msg_y, 2, msg.c_str());
-            attroff(COLOR_PAIR(color));
+            attroff(COLOR_PAIR(cp));
             refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
             ++msg_y;

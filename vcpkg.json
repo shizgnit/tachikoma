@@ -9,5 +9,7 @@
       "name": "ncurses",
       "version": "6.5"
     }
-  ]
+  ],
+  "overlay-ports": [],
+  "builtin-baseline": "98d7cb0cf1f4686a3e43aa5672b6230c1d56bce8"
 }

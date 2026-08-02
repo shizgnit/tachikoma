@@ -13,8 +13,8 @@ public:
     TreeView();
     ~TreeView();
 
-    /// Set the root entry to display
-    void set_root(const filesystem::Entry& root);
+    /// Set the root entry to display (takes ownership via copy)
+    void set_root(filesystem::Entry root);
 
     /// Render the tree view
     void render();
@@ -39,7 +39,7 @@ private:
     void build_visible_list();
 
     filesystem::Entry root_;
-    std::vector<const filesystem::Entry*> visible_items_;
+    std::vector<filesystem::Entry*> visible_items_;
     int selected_index_{0};
     int scroll_offset_{0};
 

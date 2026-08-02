@@ -12,11 +12,16 @@ Scanner::~Scanner() = default;
 
 void Scanner::scan_recursive(Entry& entry, int depth, int max_depth,
                             ProgressCallback on_progress) {
-    if (cancelled_.load() || depth > max_depth) {
+    if (cancelled_.load()) {
         return;
     }
 
     if (entry.type != Entry::Type::Directory) {
+        return;
+    }
+
+    // Don't list contents if we've exceeded max depth
+    if (depth >= max_depth) {
         return;
     }
 
@@ -83,9 +88,13 @@ void Scanner::scan_recursive(Entry& entry, int depth, int max_depth,
             }
         }
 
-        // Calculate total size for directories
-        for (auto& child : entry.children) {
-            entry.total_size += child.total_size > 0 ? child.total_size : child.size;
+        // Calculate total size for directories (from children)
+        for (const auto& child : entry.children) {
+            if (child.type == Entry::Type::Directory && child.total_size > 0) {
+                entry.total_size += child.total_size;
+            } else {
+                entry.total_size += child.size;
+            }
         }
 
     } catch (const std::exception&) {
