@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
         // Show scanning status
         int term_height = terminal.height();
         mvaddstr(term_height - 2, 2, status_msg.c_str());
-        refresh();
+        ::refresh();
 
         // Perform scan
         filesystem::Scanner scanner;
@@ -64,9 +64,9 @@ int main(int argc, char* argv[]) {
             terminal.clear();
 
             // Header
-            ui::render_colored(0, 2, "╔══════════════════════════════════════════════════════════════╗", 2);
-            ui::render_colored(1, 2, "║  TACHIKOMA - Filesystem Reconnaissance System               ║", 2);
-            ui::render_colored(2, 2, "╚══════════════════════════════════════════════════════════════╝", 2);
+            ui::render_colored(0, 2, "+============================================================+", 2);
+            ui::render_colored(1, 2, "|  TACHIKOMA - Filesystem Reconnaissance System               |", 2);
+            ui::render_colored(2, 2, "+============================================================+", 2);
 
             // Status bar
             auto* selected = tree_view.selected();
@@ -99,7 +99,7 @@ int main(int argc, char* argv[]) {
                     // Refresh - re-scan
                     terminal.clear();
                     mvaddstr(term_h - 2, 2, "Refreshing...");
-                    refresh();
+                    ::refresh();
 
                     root = scanner.scan(target_path, 2);
                     tree_view.set_root(root);

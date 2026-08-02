@@ -10,19 +10,16 @@ namespace tachikoma::ui {
 
 std::vector<std::string> get_logo() {
     return {
-        "  ██████╗██╗   ██╗██████╗ ███████╗██████╗ ",
-        " ██╔════╝╚██╗ ██╔╝██╔══██╗██╔════╝██╔══██╗",
-        " ██║      ╚████╔╝ ██████╔╝█████╗  ██████╔╝",
-        " ██║       ╚██╔╝  ██╔══██╗██╔══╝  ██╔══██╗",
-        " ╚██████╗   ██║   ██████╔╝███████╗██║  ██║",
-        "  ╚═════╝   ╚═╝   ╚═════╝ ╚══════╝╚═╝  ╚═╝",
+        "  +---------------------------+  ",
+        "  |   ___                   |   ",
+        "  |  /   \\                  |   ",
+        "  | | T |  TACHIKOMA        |   ",
+        "  |  \\___/                  |   ",
+        "  +---------------------------+  ",
         "",
-        "  ╔╦╗  ╔═╗  ╔╦╗  ╔╦╗  ╔╦╗  ╔═╗  ╔╦╗  ╔═╗ ",
-        "  ║║   ║ ║   ║   ║║   ║║   ║ ║   ║   ║ ║ ",
-        "  ╩ ╩  ╚═╝   ╩   ╩   ╩   ╚═╝   ╩   ╚═╝ ",
+        "  T A C H I K O M A",
         "",
-        "        T A C H I K O M A",
-        "   Filesystem Reconnaissance System",
+        "  Filesystem Reconnaissance System",
     };
 }
 
@@ -46,7 +43,7 @@ void render_startup_screen() {
     int term_height = getmaxy(stdscr);
 
     // Clear screen
-    clear();
+    werase(stdscr);
 
     // Calculate starting position to center logo
     int logo_height = static_cast<int>(logo.size());
@@ -57,18 +54,18 @@ void render_startup_screen() {
     for (int i = 0; i < logo_height && (start_y + i) < term_height; ++i) {
         int x = center_x(logo[i], term_width);
         if (i < 6) {
-            // Main "TACHIKOMA" text - green
+            // Tachikoma box art - green
             render_colored(start_y + i, x, logo[i], 2);
-        } else if (i >= 7 && i <= 9) {
-            // Subtitle area - cyan
+        } else if (i == 7) {
+            // "TACHIKOMA" title - cyan
             render_colored(start_y + i, x, logo[i], 3);
         } else {
-            // Bottom text - yellow
+            // Subtitle - yellow
             render_colored(start_y + i, x, logo[i], 4);
         }
     }
 
-    refresh();
+    ::refresh();
     std::this_thread::sleep_for(std::chrono::milliseconds(800));
 
     // Render boot messages with scrolling effect
@@ -89,10 +86,10 @@ void render_startup_screen() {
                 cp = 5; // red
             }
 
-            attron(COLOR_PAIR(cp));
+            attrset(COLOR_PAIR(cp));
             mvaddstr(msg_y, 2, msg.c_str());
-            attroff(COLOR_PAIR(cp));
-            refresh();
+            attrset(A_NORMAL);
+            ::refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
             ++msg_y;
         }
@@ -100,9 +97,9 @@ void render_startup_screen() {
 
     // Wait for key press
     mvaddstr(term_height - 1, 2, "Press any key to continue...");
-    refresh();
+    ::refresh();
     wait_for_key();
-    clear();
+    werase(stdscr);
 }
 
 } // namespace tachikoma::ui

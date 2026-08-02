@@ -52,7 +52,7 @@ void Terminal::shutdown() {
 
 void Terminal::clear() {
     if (initialized_) {
-        ::clear();
+        werase(stdscr);
         ::refresh();
     }
 }

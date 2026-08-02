@@ -7,16 +7,16 @@ namespace tachikoma::ui {
 
 void render_text(int y, int x, const std::string& text, Attr attr) {
     attr_t attrs = static_cast<attr_t>(attr);
-    attron(attrs);
+    attrset(attrs);
     mvaddstr(y, x, text.c_str());
-    attroff(attrs);
+    attrset(A_NORMAL);
 }
 
 void render_colored(int y, int x, const std::string& text, int cp) {
     attr_t attrs = static_cast<attr_t>(COLOR_PAIR(cp));
-    attron(attrs);
+    attrset(attrs);
     mvaddstr(y, x, text.c_str());
-    attroff(attrs);
+    attrset(A_NORMAL);
 }
 
 void render_hline(int y, int x, int width, char ch) {
@@ -43,7 +43,7 @@ void render_scrolling_text(const std::string& text, int y, int x, int delay_ms) 
     for (char c : text) {
         mvaddch(y, x, c);
         ++x;
-        refresh();
+        ::refresh();
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }
 }
