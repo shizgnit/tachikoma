@@ -1,0 +1,13 @@
+{
+  "name": "tachikoma",
+  "version": "0.1.0",
+  "dependencies": [
+    "ncurses"
+  ],
+  "overrides": [
+    {
+      "name": "ncurses",
+      "version": "6.5"
+    }
+  ]
+}
