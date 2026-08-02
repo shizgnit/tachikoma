@@ -3,9 +3,13 @@
 #include "filesystem/entry.hpp"
 #include <vector>
 #include <string>
+#include <functional>
 #include <ncurses.h>
 
 namespace tachikoma::ui {
+
+/// Callback for lazy-loading children of a directory
+using LoadChildrenCallback = std::function<void(filesystem::Entry&)>;
 
 /// Tree view for displaying filesystem entries
 class TreeView {
@@ -15,6 +19,9 @@ public:
 
     /// Set the root entry to display (takes ownership via copy)
     void set_root(filesystem::Entry root);
+
+    /// Set callback for lazy-loading directory children
+    void set_load_children_callback(LoadChildrenCallback cb);
 
     /// Render the tree view
     void render();
@@ -47,6 +54,8 @@ private:
     int x_start_{0};
     int height_{0};
     int width_{0};
+
+    LoadChildrenCallback load_children_cb_;
 };
 
 } // namespace tachikoma::ui

@@ -52,6 +52,9 @@ int main(int argc, char* argv[]) {
         bool running = true;
         ui::TreeView tree_view;
         tree_view.set_root(root);
+        tree_view.set_load_children_callback([&scanner](filesystem::Entry& entry) {
+            scanner.load_children(entry);
+        });
 
         int term_w = terminal.width();
         int term_h = terminal.height();

@@ -179,4 +179,60 @@ void Scanner::cancel() {
     cancelled_.store(true);
 }
 
+void Scanner::load_children(Entry& entry) {
+    if (entry.type != Entry::Type::Directory || !entry.children.empty()) {
+        return;
+    }
+
+    uint64_t total_size = 0;
+
+    try {
+        std::error_code ec;
+        auto dir_entries = fs::directory_iterator(entry.path, ec);
+        if (ec) {
+            return;
+        }
+
+        std::vector<fs::directory_entry> entries;
+        for (auto& de : dir_entries) {
+            entries.push_back(de);
+        }
+
+        // Sort: directories first, then by name
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            std::error_code ec_a, ec_b;
+            bool a_dir = a.is_directory(ec_a);
+            bool b_dir = b.is_directory(ec_b);
+            if (a_dir != b_dir) return a_dir;
+            return a.path().filename().string() < b.path().filename().string();
+        });
+
+        for (auto& de : entries) {
+            Entry child;
+            child.path = de.path().string();
+            child.name = de.path().filename().string();
+
+            std::error_code ec;
+            if (de.is_directory(ec)) {
+                child.type = Entry::Type::Directory;
+                child.size = 0;
+            } else if (de.is_symlink(ec)) {
+                child.type = Entry::Type::Symlink;
+                child.size = de.file_size(ec);
+            } else {
+                child.type = Entry::Type::File;
+                child.size = de.file_size(ec);
+            }
+
+            entry.children.push_back(std::move(child));
+            total_size += entry.children.back().size;
+        }
+
+        entry.total_size += total_size;
+
+    } catch (const std::exception&) {
+        // Silently handle permission errors
+    }
+}
+
 } // namespace tachikoma::filesystem

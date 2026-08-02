@@ -121,6 +121,10 @@ void TreeView::handle_input(int key) {
             if (selected_index_ >= 0 && selected_index_ < static_cast<int>(visible_items_.size())) {
                 auto* entry = visible_items_[selected_index_];
                 if (entry && entry->type == filesystem::Entry::Type::Directory && !entry->expanded) {
+                    // Lazy-load children if not already loaded
+                    if (load_children_cb_ && entry->children.empty()) {
+                        load_children_cb_(*entry);
+                    }
                     entry->expanded = true;
                     refresh();
                 }
@@ -159,6 +163,10 @@ void TreeView::set_viewport(int y_start, int x_start, int height, int width) {
 
 void TreeView::refresh() {
     build_visible_list();
+}
+
+void TreeView::set_load_children_callback(LoadChildrenCallback cb) {
+    load_children_cb_ = std::move(cb);
 }
 
 } // namespace tachikoma::ui

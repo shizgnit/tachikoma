@@ -30,6 +30,9 @@ public:
     /// Get a list of top-level entries in a directory
     static std::vector<Entry> list_directory(const std::string& path);
 
+    /// Load children of a directory on demand (lazy loading)
+    void load_children(Entry& entry);
+
     /// Check if scanning should stop (for cancellation)
     void cancel();
 
