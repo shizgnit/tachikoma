@@ -19,7 +19,10 @@ void CommandBar::set_viewport(int y, int x, int width) {
 }
 
 void CommandBar::render() {
-    if (active_) {
+    if (help_mode_) {
+        // Render help overlay
+        render_help_overlay();
+    } else if (active_) {
         // Show input with suggestions
         std::string prompt = "/" + input_;
         render_colored(y_, x_, prompt, 3); // cyan
@@ -38,6 +41,12 @@ void CommandBar::render() {
 }
 
 bool CommandBar::handle_input(int key) {
+    // If help overlay is showing, dismiss on any key
+    if (help_mode_) {
+        help_mode_ = false;
+        return true;
+    }
+
     if (key == '/' && !active_) {
         active_ = true;
         input_.clear();
@@ -160,6 +169,51 @@ std::vector<std::string> CommandBar::find_matches(const std::string& prefix) con
         }
     }
     return matches;
+}
+
+void CommandBar::show_help() {
+    help_mode_ = true;
+}
+
+bool CommandBar::is_help_shown() const {
+    return help_mode_;
+}
+
+void CommandBar::render_help_overlay() {
+    int term_height = getmaxy(stdscr);
+    int term_width = getmaxx(stdscr);
+
+    // Calculate overlay size
+    int overlay_height = static_cast<int>(commands_.size()) + 4; // title + commands + padding
+    if (overlay_height > term_height - 4) {
+        overlay_height = term_height - 4;
+    }
+
+    int start_y = (term_height - overlay_height) / 2;
+    int start_x = (term_width - 60) / 2;
+    if (start_x < 2) start_x = 2;
+
+    // Title
+    std::string title = "  TACHIKOMA - Available Commands  ";
+    int title_x = (term_width - static_cast<int>(title.length())) / 2;
+    render_colored(start_y, title_x, title, 2); // green
+
+    // Commands
+    int cmd_y = start_y + 2;
+    size_t max_cmds = static_cast<size_t>(overlay_height - 4);
+    for (size_t i = 0; i < commands_.size() && i < max_cmds; ++i) {
+        std::string line = "  /" + commands_[i].name + " - " + commands_[i].description;
+        if (static_cast<int>(line.length()) > term_width - 4) {
+            line = line.substr(0, term_width - 7) + "...";
+        }
+        render_colored(cmd_y, 2, line, 3); // cyan for command name
+        ++cmd_y;
+    }
+
+    // Footer
+    std::string footer = "  Press any key to dismiss  ";
+    int footer_x = (term_width - static_cast<int>(footer.length())) / 2;
+    render_colored(cmd_y + 1, footer_x, footer, 4); // yellow
 }
 
 } // namespace tachikoma::ui

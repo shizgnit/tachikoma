@@ -40,9 +40,18 @@ public:
     /// Get the command list for completion
     const std::vector<Command>& commands() const;
 
+    /// Show help overlay (dismissible with any key)
+    void show_help();
+
+    /// Check if help overlay is showing
+    bool is_help_shown() const;
+
 private:
     /// Find matching commands for tab completion
     std::vector<std::string> find_matches(const std::string& prefix) const;
+
+    /// Render help overlay
+    void render_help_overlay();
 
     int y_{0};
     int x_{0};
@@ -53,6 +62,8 @@ private:
     std::vector<Command> commands_;
     std::vector<std::string> suggestions_;
     int suggestion_index_{-1};
+
+    bool help_mode_{false};
 };
 
 } // namespace tachikoma::ui

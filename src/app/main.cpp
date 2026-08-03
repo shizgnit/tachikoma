@@ -57,9 +57,7 @@ int main(int argc, char* argv[]) {
 
         // Register slash commands
         command_bar.register_command("help", "Show available commands", [&]() {
-            status_bar.set_message("Commands: /help, /quit, /scan, /path <dir>, /status");
-            std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            status_bar.clear();
+            command_bar.show_help();
         });
 
         command_bar.register_command("quit", "Exit the application", [&]() {
