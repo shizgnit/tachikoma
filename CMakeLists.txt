@@ -9,13 +9,23 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Include custom CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules")
 
+# Concurrency / background task library
+add_library(tachikoma_concurrency STATIC
+    src/concurrency/task_tracker.cpp
+)
+target_include_directories(tachikoma_concurrency PUBLIC include)
+target_compile_features(tachikoma_concurrency PUBLIC cxx_std_20)
+target_link_libraries(tachikoma_concurrency PUBLIC Threads::Threads)
+
 # Filesystem scanning library
 add_library(tachikoma_fs STATIC
     src/filesystem/scanner.cpp
     src/filesystem/entry.cpp
+    src/filesystem/size_estimator.cpp
 )
 target_include_directories(tachikoma_fs PUBLIC include)
 target_compile_features(tachikoma_fs PUBLIC cxx_std_20)
+target_link_libraries(tachikoma_fs PUBLIC tachikoma_concurrency)
 
 # TUI library
 add_library(tachikoma_ui STATIC
@@ -26,14 +36,17 @@ add_library(tachikoma_ui STATIC
     src/ui/logo.cpp
     src/ui/command_bar.cpp
     src/ui/status_bar.cpp
+    src/ui/bar_chart.cpp
+    src/ui/task_progress.cpp
 )
 target_include_directories(tachikoma_ui PUBLIC include)
 target_link_libraries(tachikoma_ui PUBLIC tachikoma_fs)
 target_compile_features(tachikoma_ui PUBLIC cxx_std_20)
 
-# Link ncurses
+# Link ncurses and threads
 find_package(Curses REQUIRED)
-target_link_libraries(tachikoma_ui PUBLIC ${CURSES_LIBRARIES})
+find_package(Threads REQUIRED)
+target_link_libraries(tachikoma_ui PUBLIC ${CURSES_LIBRARIES} Threads::Threads)
 target_include_directories(tachikoma_ui PUBLIC ${CURSES_INCLUDE_DIRS})
 
 # Main application

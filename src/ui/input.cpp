@@ -9,11 +9,10 @@ int wait_for_key() {
 }
 
 std::optional<int> get_key_with_timeout(int timeout_ms) {
-    nodelay(stdscr, TRUE);
-    // Set a timeout for getch
-    timeout(timeout_ms);
+    // Do NOT call timeout() here — it's set once during terminal init.
+    // Re-calling timeout() on every loop iteration can reset ncurses'
+    // internal escape-sequence parsing state, breaking arrow keys.
     int ch = getch();
-    nodelay(stdscr, FALSE);
 
     if (ch == ERR) {
         return std::nullopt;

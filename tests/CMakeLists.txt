@@ -30,6 +30,19 @@ target_link_libraries(tachikoma_util_tests PRIVATE
 )
 target_compile_features(tachikoma_util_tests PRIVATE cxx_std_20)
 
+# Concurrency tests (lock-free queue, task tracker, size estimator)
+add_executable(tachikoma_concurrency_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_concurrency.cpp
+)
+target_link_libraries(tachikoma_concurrency_tests PRIVATE
+    tachikoma_fs
+    tachikoma_concurrency
+    GTest::gtest_main
+)
+target_compile_features(tachikoma_concurrency_tests PRIVATE cxx_std_20)
+target_link_libraries(tachikoma_concurrency_tests PRIVATE Threads::Threads)
+
 include(GoogleTest)
 gtest_discover_tests(tachikoma_fs_tests)
 gtest_discover_tests(tachikoma_util_tests)
+gtest_discover_tests(tachikoma_concurrency_tests)

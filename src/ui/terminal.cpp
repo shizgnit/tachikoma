@@ -11,6 +11,11 @@ Terminal::~Terminal() {
 }
 
 void Terminal::init() {
+    // Set ESCDELAY low BEFORE initscr(). Default is 1000ms, which is longer
+    // than our getch timeout — causing getch to return bare ESC instead of
+    // KEY_UP/DOWN/LEFT/RIGHT when timeout fires before escape seq completes.
+    set_escdelay(50);
+
     initscr();
     if (!stdscr) {
         throw std::runtime_error("Failed to initialize terminal (no TTY)");
@@ -19,7 +24,8 @@ void Terminal::init() {
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
-    nodelay(stdscr, FALSE);
+    // Set timeout once at init — do NOT re-call timeout() in the main loop.
+    timeout(200); // 200ms poll interval for background task results
 
     // Start color support
     if (has_colors()) {
@@ -52,8 +58,10 @@ void Terminal::shutdown() {
 
 void Terminal::clear() {
     if (initialized_) {
+        // Just erase the buffer - do NOT call ::refresh() here.
+        // The caller will refresh() after drawing new content.
+        // Calling refresh() after werase() pushes a blank frame causing flicker.
         werase(stdscr);
-        ::refresh();
     }
 }
 
