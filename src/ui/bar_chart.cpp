@@ -2,7 +2,6 @@
 #include "ui/renderer.hpp"
 #include "filesystem/size_estimator.hpp"
 #include <algorithm>
-#include <ncurses.h>
 #include <sstream>
 #include <iomanip>
 

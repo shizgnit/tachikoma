@@ -1,6 +1,5 @@
 #include "ui/task_progress.hpp"
 #include "ui/renderer.hpp"
-#include <ncurses.h>
 #include <algorithm>
 #include <sstream>
 

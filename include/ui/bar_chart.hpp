@@ -1,7 +1,6 @@
 #pragma once
 
 #include "filesystem/entry.hpp"
-#include <ncurses.h>
 #include <string>
 #include <vector>
 

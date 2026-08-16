@@ -34,10 +34,14 @@ Terminal::~Terminal() {
 }
 
 void Terminal::init() {
-    // Set ESCDELAY low BEFORE initscr(). Default is 1000ms, which is longer
-    // than our getch timeout — causing getch to return bare ESC instead of
-    // KEY_UP/DOWN/LEFT/RIGHT when timeout fires before escape seq completes.
+    // Set the escape-sequence timeout low BEFORE initscr(). Default is 1000ms,
+    // longer than our getch timeout — so a timeout fired mid-arrow-key would
+    // return bare ESC instead of KEY_UP/DOWN/LEFT/RIGHT. PDCurses reads
+    // Windows virtual keys directly (no escape-sequence parsing) and has no
+    // set_escdelay API, so this only applies to ncurses.
+#ifndef PDCURSES
     set_escdelay(50);
+#endif
 
 #ifdef _WIN32
     if (!console_available()) {
