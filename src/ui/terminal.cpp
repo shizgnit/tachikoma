@@ -1,5 +1,28 @@
+// Platform-facing layer.
+// This file (terminal lifecycle), renderer.cpp (cell drawing) and input.cpp
+// (key reading) are the ONLY translation units that call curses/PDCurses
+// directly. All other UI code goes through ui:: helpers, so ncurses vs
+// PDCurses differences stay contained in this one place.
+
 #include "ui/terminal.hpp"
 #include <cstdlib>
+#include <stdexcept>
+
+#ifdef _WIN32
+#include <windows.h>
+namespace {
+// PDCurses requires an allocated console screen buffer. Without one, initscr()
+// prints "Unable to create SP" and terminates the process before we can react,
+// so probe for a usable console first and fail with a clear message instead.
+bool console_available() {
+    HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!handle) return false;
+    CONSOLE_SCREEN_BUFFER_INFO info{};
+    return ::GetConsoleScreenBufferInfo(handle, &info) != 0 &&
+           info.dwSize.X > 0 && info.dwSize.Y > 0;
+}
+} // namespace
+#endif
 
 namespace tachikoma::ui {
 
@@ -16,6 +39,13 @@ void Terminal::init() {
     // KEY_UP/DOWN/LEFT/RIGHT when timeout fires before escape seq completes.
     set_escdelay(50);
 
+#ifdef _WIN32
+    if (!console_available()) {
+        throw std::runtime_error(
+            "no interactive console attached - run tachikoma from a cmd/PowerShell "
+            "window (the PDCurses backend requires an allocated screen buffer)");
+    }
+#endif
     initscr();
     if (!stdscr) {
         throw std::runtime_error("Failed to initialize terminal (no TTY)");

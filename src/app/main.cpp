@@ -58,8 +58,8 @@ int main(int argc, char* argv[]) {
         int term_w = terminal.width();
         int term_h = terminal.height();
 
-        // Configure status bar (top row)
-        status_bar.set_viewport(0, 2, term_w - 4);
+        // Status/scan-status content lives on row 1 (row 0 is the border line)
+        status_bar.set_viewport(1, 2, term_w - 4);
 
         // Configure command bar (bottom row)
         command_bar.set_viewport(term_h - 1, 2, term_w - 4);
@@ -71,6 +71,23 @@ int main(int argc, char* argv[]) {
         if (pane_height < 4) pane_height = 4;
 
         task_progress.set_viewport(term_h - 3, 2, 1, pane_width);
+
+        // Unified top-of-screen frame: full-width border on row 0, and either the
+        // title or live scan status (message/progress) on row 1. Every code path
+        // that shows scanning state goes through this one function so the
+        // indicator can never be forgotten by a particular call site.
+        auto draw_frame_top = [&](ui::StatusBar& sb) {
+            int width = terminal.width();
+            if (width < 8) return;
+            terminal.clear();
+            std::string line(width - 2, '=');
+            ui::render_colored(0, 0, "+" + line + "+", 2); // green border
+            if (sb.has_content()) {
+                sb.render(); // row 1: scan progress / message
+            } else {
+                ui::render_text(1, 2, "TACHIKOMA - Filesystem Reconnaissance System");
+            }
+        };
 
         // Shared app state
         AppState app_state;
@@ -105,41 +122,14 @@ int main(int argc, char* argv[]) {
             status_bar.set_message("Launched " + std::to_string(num_tasks) + " size estimation tasks");
         };
 
-        /// Helper: drain results, apply sizes, resort
-        auto process_results = [&]() {
-            auto results = tracker.drain_results();
-            if (!results.empty()) {
-                std::lock_guard<std::mutex> lock(app_state.mtx);
-                estimator.apply_results(results, app_state.top_level_entries);
-
-                // Resort siblings by size (largest first) — recursively
-                filesystem::SizeEstimator::sort_by_size(app_state.top_level_entries);
-                filesystem::SizeEstimator::sort_by_size_recursive(tree_view.mutable_root());
-
-                // Update progress
-                task_progress.set_progress(
-                    tracker.completed_tasks(),
-                    tracker.total_tasks(),
-                    tracker.running_tasks()
-                );
-
-                // Check if all done
-                if (tracker.all_done()) {
-                    app_state.sizes_ready = true;
-                    task_progress.set_label("Size estimation complete!");
-                    status_bar.set_message(
-                        "Scan complete: " +
-                        std::to_string(tracker.completed_tasks()) + " folders estimated");
-                }
-            }
-        };
-
-        /// Helper: do initial scan and start estimation
+        /// Helper: do initial scan and start estimation (results are drained in the main loop)
         auto do_full_scan = [&]() {
-            terminal.clear();
-
+            // Immediate first frame: border + scan status on row 1 before the
+            // shallow listing starts, so feedback is never missing.
+            status_bar.set_scanning_path(target_path);
             status_bar.set_message("Scanning filesystem...");
             status_bar.set_progress(0.0);
+            draw_frame_top(status_bar);
             terminal.refresh();
 
             // Quick shallow scan (list top-level only)
@@ -191,7 +181,7 @@ int main(int argc, char* argv[]) {
             status_bar.set_message("Tachikoma v0.1.0 - All systems operational");
         });
 
-        // Initial scan
+        // Initial scan (shallow list + background size estimation with live progress)
         do_full_scan();
 
         // Main loop
@@ -223,18 +213,8 @@ int main(int argc, char* argv[]) {
 
             // Only redraw when something actually changed
             if (redraw_needed) {
-                terminal.clear();
-
-                // Header
-                std::string header = "+";
-                header.append(term_w - 2, '=');
-                header += "+";
-                ui::render_colored(0, 0, header, 2);
-                std::string title = "|  TACHIKOMA - Filesystem Reconnaissance System               |";
-                ui::render_colored(1, 2, title, 2);
-
-                // Status bar
-                status_bar.render();
+                // Top rows: full-width border + (title or live scan status) — single code path
+                draw_frame_top(status_bar);
 
                 // Update tree view children from latest scan results (without resetting selection)
                 {

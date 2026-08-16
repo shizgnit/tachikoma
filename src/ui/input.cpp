@@ -1,5 +1,5 @@
 #include "ui/input.hpp"
-#include <ncurses.h>
+#include <curses.h>
 #include <sstream>
 
 namespace tachikoma::ui {

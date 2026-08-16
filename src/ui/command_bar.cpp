@@ -1,6 +1,6 @@
 #include "ui/command_bar.hpp"
 #include "ui/renderer.hpp"
-#include <ncurses.h>
+#include "ui/input.hpp" // KEY_* codes (platform input abstraction)
 #include <algorithm>
 
 namespace tachikoma::ui {
@@ -180,8 +180,8 @@ bool CommandBar::is_help_shown() const {
 }
 
 void CommandBar::render_help_overlay() {
-    int term_height = getmaxy(stdscr);
-    int term_width = getmaxx(stdscr);
+    int term_height = screen_height();
+    int term_width = screen_width();
 
     // Calculate overlay size
     int overlay_height = static_cast<int>(commands_.size()) + 4; // title + commands + padding

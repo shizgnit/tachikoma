@@ -16,6 +16,9 @@ public:
     /// Set a status message
     void set_message(const std::string& message);
 
+    /// Set the current path being scanned (shown during active scan)
+    void set_scanning_path(const std::string& path);
+
     /// Set progress (0.0 to 1.0)
     void set_progress(double progress);
 
@@ -34,6 +37,7 @@ private:
     int width_{0};
 
     std::string message_;
+    std::string scanning_path_;
     double progress_{-1.0}; // -1 means no progress
     bool has_progress_{false};
 };

@@ -155,6 +155,76 @@ TEST(ScannerTest, ScanMaxDepth) {
     fs::remove_all(tmp);
 }
 
+TEST(ScannerTest, DirectoryTotalsAreTrueRecursiveEvenWhenLazy) {
+    fs::path tmp = fs::temp_directory_path() / "tachikoma_test_lazy_totals";
+    if (fs::exists(tmp)) fs::remove_all(tmp);
+    fs::create_directories(tmp / "deep" / "a" / "b");
+
+    std::ofstream(tmp / "top.txt") << "12345";                       // 5 bytes
+    std::ofstream(tmp / "deep" / "mid.txt") << "1234567890";        // 10 bytes
+    {
+        std::ofstream leaf(tmp / "deep" / "a" / "b" / "leaf.bin", std::ios::binary);
+        leaf.write("x", 1000);                                      // 1000 bytes
+    }
+
+    Scanner scanner;
+    // max_depth=1: 'deep' is materialized but its subtree must NOT be listed.
+    Entry root = scanner.scan(tmp.string(), nullptr, nullptr, 1);
+
+    EXPECT_EQ(root.total_size, 5 + 10 + 1000);
+
+    bool found_deep = false;
+    for (const auto& child : root.children) {
+        if (child.name == "deep" && child.type == Entry::Type::Directory) {
+            found_deep = true;
+            // True recursive size even though children are lazy.
+            EXPECT_EQ(child.total_size, 10 + 1000);
+            EXPECT_TRUE(child.children.empty());
+        }
+    }
+    EXPECT_TRUE(found_deep);
+
+    fs::remove_all(tmp);
+}
+
+TEST(ScannerTest, LazyLoadedChildrenHaveTrueSizes) {
+    fs::path tmp = fs::temp_directory_path() / "tachikoma_test_load_children";
+    if (fs::exists(tmp)) fs::remove_all(tmp);
+    fs::create_directories(tmp / "deep" / "sub");
+
+    std::ofstream(tmp / "top.txt") << "12345";                       // 5 bytes
+    std::ofstream(tmp / "deep" / "mid.txt") << "1234567890";        // 10 bytes
+    {
+        std::ofstream leaf(tmp / "deep" / "sub" / "leaf.bin", std::ios::binary);
+        leaf.write("x", 500);                                       // 500 bytes
+    }
+
+    Scanner scanner;
+    Entry root = scanner.scan(tmp.string(), nullptr, nullptr, 1);
+
+    Entry* deep = nullptr;
+    for (auto& child : root.children) {
+        if (child.name == "deep" && child.type == Entry::Type::Directory) {
+            deep = &child;
+        }
+    }
+    ASSERT_NE(deep, nullptr);
+
+    scanner.load_children(*deep);
+    ASSERT_EQ(deep->children.size(), 2u); // mid.txt + sub/
+
+    for (const auto& child : deep->children) {
+        if (child.type == Entry::Type::File && child.name == "mid.txt") {
+            EXPECT_EQ(child.size, 10ULL);
+        } else if (child.type == Entry::Type::Directory && child.name == "sub") {
+            // Lazy-loaded directory still reports its true recursive size.
+            EXPECT_EQ(child.total_size, 500ULL);
+        }
+    }
+
+    fs::remove_all(tmp);
+}
+
 TEST(ScannerTest, ListDirectory) {
     fs::path tmp = fs::temp_directory_path() / "tachikoma_test_list";
     fs::create_directories(tmp);

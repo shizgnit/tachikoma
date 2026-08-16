@@ -1,10 +1,10 @@
 #pragma once
 
 #include "filesystem/entry.hpp"
+#include "ui/input.hpp" // KEY_* codes (platform input abstraction)
 #include <vector>
 #include <string>
 #include <functional>
-#include <ncurses.h>
 
 namespace tachikoma::ui {
 
@@ -13,6 +13,12 @@ using LoadChildrenCallback = std::function<void(filesystem::Entry&)>;
 
 /// Callback fired after a directory is expanded, so caller can submit size tasks
 using DirectoryExpandedCallback = std::function<void(const std::vector<filesystem::Entry>& new_children)>;
+
+/// Holds a pointer to an entry plus its tree depth for rendering
+struct VisibleItem {
+    filesystem::Entry* entry;
+    int depth;
+};
 
 /// Tree view for displaying filesystem entries
 class TreeView {
@@ -54,15 +60,22 @@ public:
     void refresh();
 
 private:
-    void render_item(const filesystem::Entry& entry, int y, int x, int depth, bool is_selected,
-                     uint64_t max_size, int name_col_width, int bar_col_start, int bar_width, int size_col_start);
+    /// Per-frame layout shared by every row so sizes line up in one column.
+    struct Layout {
+        int size_x{0};       // uniform start of the right-aligned size field
+        int size_field{8};   // width of that field (fits the longest formatted size)
+        int right_edge{0};   // exclusive x bound (viewport end)
+        uint64_t max_size{0};// largest visible entry, for bar scaling
+    };
+
+    void render_item(const VisibleItem& item, int y, bool is_selected, const Layout& layout);
     void build_visible_list();
 
     /// Compute max size across all visible items (for inline bar scaling)
     uint64_t compute_max_size() const;
 
     filesystem::Entry root_;
-    std::vector<filesystem::Entry*> visible_items_;
+    std::vector<VisibleItem> visible_items_;
     int selected_index_{0};
     int scroll_offset_{0};
 

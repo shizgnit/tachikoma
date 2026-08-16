@@ -1,7 +1,7 @@
 #include "ui/renderer.hpp"
 #include <thread>
 #include <chrono>
-#include <ncurses.h>
+#include <curses.h>
 
 namespace tachikoma::ui {
 
@@ -17,6 +17,23 @@ void render_colored(int y, int x, const std::string& text, int cp) {
     attrset(attrs);
     mvaddstr(y, x, text.c_str());
     attrset(A_NORMAL);
+}
+
+void render_char(int y, int x, char ch) {
+    attrset(A_NORMAL);
+    mvaddch(y, x, ch);
+}
+
+int screen_width() {
+    return static_cast<int>(getmaxx(stdscr));
+}
+
+int screen_height() {
+    return static_cast<int>(getmaxy(stdscr));
+}
+
+void clear_window() {
+    werase(stdscr);
 }
 
 void render_hline(int y, int x, int width, char ch) {

@@ -1,10 +1,9 @@
 #include "ui/logo.hpp"
 #include "ui/renderer.hpp"
-#include "ui/terminal.hpp"
 #include "ui/input.hpp"
+#include <string>
 #include <thread>
-#include <chrono>
-#include <ncurses.h>
+#include <vector>
 
 namespace tachikoma::ui {
 
@@ -39,11 +38,11 @@ void render_startup_screen() {
     auto logo = get_logo();
     auto messages = get_boot_messages();
 
-    int term_width = getmaxx(stdscr);
-    int term_height = getmaxy(stdscr);
+    int term_width = screen_width();
+    int term_height = screen_height();
 
     // Clear screen
-    werase(stdscr);
+    clear_window();
 
     // Calculate starting position to center logo
     int logo_height = static_cast<int>(logo.size());
@@ -86,9 +85,7 @@ void render_startup_screen() {
                 cp = 5; // red
             }
 
-            attrset(COLOR_PAIR(cp));
-            mvaddstr(msg_y, 2, msg.c_str());
-            attrset(A_NORMAL);
+            render_colored(msg_y, 2, msg, cp);
             ::refresh();
             std::this_thread::sleep_for(std::chrono::milliseconds(150));
             ++msg_y;
@@ -96,10 +93,10 @@ void render_startup_screen() {
     }
 
     // Wait for key press
-    mvaddstr(term_height - 1, 2, "Press any key to continue...");
+    render_text(term_height - 1, 2, "Press any key to continue...");
     ::refresh();
     wait_for_key();
-    werase(stdscr);
+    clear_window();
 }
 
 } // namespace tachikoma::ui

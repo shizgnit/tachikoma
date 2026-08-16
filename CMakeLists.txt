@@ -43,11 +43,19 @@ target_include_directories(tachikoma_ui PUBLIC include)
 target_link_libraries(tachikoma_ui PUBLIC tachikoma_fs)
 target_compile_features(tachikoma_ui PUBLIC cxx_std_20)
 
-# Link ncurses and threads
-find_package(Curses REQUIRED)
+# Link terminal library (ncurses on Unix, PDCurses on Windows) and threads
+if(WIN32)
+    find_package(unofficial-pdcurses REQUIRED)
+    target_link_libraries(tachikoma_ui PUBLIC unofficial::pdcurses::pdcurses)
+    target_compile_definitions(tachikoma_ui PUBLIC USE_PDCURSES)
+else()
+    find_package(Curses REQUIRED)
+    target_link_libraries(tachikoma_ui PUBLIC ${CURSES_LIBRARIES})
+    target_include_directories(tachikoma_ui PUBLIC ${CURSES_INCLUDE_DIRS})
+endif()
+
 find_package(Threads REQUIRED)
-target_link_libraries(tachikoma_ui PUBLIC ${CURSES_LIBRARIES} Threads::Threads)
-target_include_directories(tachikoma_ui PUBLIC ${CURSES_INCLUDE_DIRS})
+target_link_libraries(tachikoma_ui PUBLIC Threads::Threads)
 
 # Main application
 add_executable(tachikoma src/app/main.cpp)

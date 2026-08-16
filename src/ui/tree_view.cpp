@@ -11,6 +11,10 @@ TreeView::~TreeView() = default;
 
 void TreeView::set_root(filesystem::Entry root) {
     root_ = std::move(root);
+    // Show the top-level entries by default (ncdu-style first screen).
+    if (root_.type == filesystem::Entry::Type::Directory) {
+        root_.expanded = true;
+    }
     selected_index_ = 0;
     scroll_offset_ = 0;
     build_visible_list();
@@ -45,7 +49,7 @@ void TreeView::build_visible_list() {
 
     std::function<void(filesystem::Entry&, int)> collect =
         [&](filesystem::Entry& entry, int depth) {
-        visible_items_.push_back(&entry);
+        visible_items_.push_back({&entry, depth});
 
         if (entry.expanded && !entry.children.empty()) {
             for (auto& child : entry.children) {
@@ -57,24 +61,37 @@ void TreeView::build_visible_list() {
     collect(root_, 0);
 }
 
+namespace {
+
+constexpr int INDENT_STEP = 2; // horizontal space per tree level
+constexpr int ICON_W = 2;      // icon column (">", "+", "@") plus gap to name
+constexpr int SIZE_FIELD = 8;  // minimum width of the right-aligned size text field
+constexpr int MIN_BAR = 6;     // minimum width reserved for the size bar
+
+} // namespace
+
 uint64_t TreeView::compute_max_size() const {
     uint64_t max_size = 0;
-    for (auto* item : visible_items_) {
-        if (item) {
-            uint64_t s = (item->type == filesystem::Entry::Type::Directory) ? item->total_size : item->size;
-            if (s > max_size) max_size = s;
-        }
+    for (const auto& vi : visible_items_) {
+        if (!vi.entry) continue;
+        uint64_t s = (vi.entry->type == filesystem::Entry::Type::Directory)
+            ? vi.entry->total_size : vi.entry->size;
+        if (s > max_size) max_size = s;
     }
     return max_size;
 }
 
-void TreeView::render_item(const filesystem::Entry& entry, int y, int x, int depth, bool is_selected,
-                           uint64_t max_size, int name_col_width, int bar_col_start, int bar_width, int size_col_start) {
-    int pos = x + (depth * 2);
-    if (depth > 0) {
-        mvaddch(y, pos - 1, ' ');
+void TreeView::render_item(const VisibleItem& item, int y, bool is_selected, const Layout& layout) {
+    auto& entry = *item.entry;
+    int depth = item.depth;
+    int pos = x_start_ + (depth * INDENT_STEP);
+
+    // Draw tree indentation
+    for (int d = 0; d < depth; ++d) {
+        render_char(y, x_start_ + (d * INDENT_STEP), '|');
     }
 
+    // Icon and color
     const char* icon = nullptr;
     int color = 1;
 
@@ -100,40 +117,51 @@ void TreeView::render_item(const filesystem::Entry& entry, int y, int x, int dep
         color = 8;
     }
 
+    // Render icon and name (name truncated so it never collides with the size column)
     render_colored(y, pos, icon, color);
 
-    // Truncate name to fit fixed-width name column
-    std::string display_name = entry.name;
-    if (static_cast<int>(display_name.length()) > name_col_width) {
-        display_name = display_name.substr(0, name_col_width - 3) + "...";
+    int name_x = pos + ICON_W;
+    int name_budget = layout.size_x - name_x - 1; // leave a gap before the size field
+    if (name_budget < 1) {
+        return; // no room for anything but the icon in this window width
     }
-    render_colored(y, pos + 2, display_name, color);
+    std::string name = entry.name;
+    if (static_cast<int>(name.length()) > name_budget) {
+        name = truncate(name, name_budget);
+    }
+    render_colored(y, name_x, name, color);
 
-    uint64_t size = (entry.type == filesystem::Entry::Type::Directory) ? entry.total_size : entry.size;
+    // Size value: directories show their true recursive total.
+    uint64_t size_val = (entry.type == filesystem::Entry::Type::Directory)
+        ? entry.total_size : entry.size;
 
-    // Inline horizontal bar at fixed column position
-    if (max_size > 0 && size > 0) {
-        double fraction = static_cast<double>(size) / static_cast<double>(max_size);
-        int filled = static_cast<int>(fraction * bar_width);
-
-        char bar_char = '.';
-        if (fraction >= 0.8) bar_char = '#';
-        else if (fraction >= 0.5) bar_char = '=';
-        else if (fraction >= 0.2) bar_char = '-';
-
-        std::string bar;
-        for (int i = 0; i < bar_width; ++i) {
-            bar += (i < filled) ? bar_char : ' ';
+    if (layout.size_x >= x_start_ + layout.size_field) {
+        // Right-align the size text inside the shared, fixed-width field so all
+        // rows' digits line up vertically.
+        std::string size_str = filesystem::Entry::format_size(size_val);
+        while (static_cast<int>(size_str.length()) < layout.size_field) {
+            size_str = " " + size_str;
         }
-        render_colored(y, bar_col_start, bar, (fraction > 0.5) ? 3 : 4);
-    } else if (size == 0 && entry.type == filesystem::Entry::Type::Directory) {
-        render_colored(y, bar_col_start, "...", 4); // still scanning
-    }
+        render_colored(y, layout.size_x, size_str, is_selected ? 8 : 3);
 
-    // Size label right-aligned at fixed column
-    std::string size_str = filesystem::Entry::format_size(size);
-    if (size_col_start + static_cast<int>(size_str.length()) < width_ + x_start_) {
-        render_colored(y, size_col_start, size_str, is_selected ? 8 : 1);
+        // Size bar: filled proportionally to the largest visible entry.
+        int bar_x = layout.size_x + layout.size_field;
+        int bar_w = layout.right_edge - 1 - bar_x;
+        if (bar_w >= MIN_BAR) {
+            if (layout.max_size > 0 && size_val > 0) {
+                double ratio = static_cast<double>(size_val) / static_cast<double>(layout.max_size);
+                int filled = static_cast<int>(ratio * bar_w);
+                if (filled > bar_w) filled = bar_w;
+
+                std::string bar(bar_w, ' ');
+                for (int i = 0; i < filled && i < bar_w; ++i) {
+                    bar[i] = '#';
+                }
+                render_colored(y, bar_x, bar, is_selected ? 8 : 4);
+            } else if (entry.type == filesystem::Entry::Type::Directory) {
+                render_colored(y, bar_x, "...", 4); // size still being estimated
+            }
+        }
     }
 }
 
@@ -157,28 +185,46 @@ void TreeView::render() {
 
     if (scroll_offset_ < 0) scroll_offset_ = 0;
 
-    // Compute max size for inline bar scaling
-    uint64_t max_size = compute_max_size();
-    if (max_size == 0) max_size = 1;
+    // Pick ONE uniform size-column position for this frame: just past the widest
+    // (indent + icon + name) row. This keeps sizes right-aligned in a single
+    // vertical column regardless of entry name lengths or terminal backend.
+    int right_edge = x_start_ + width_;
+    Layout layout;
+    layout.right_edge = right_edge;
+    layout.max_size = compute_max_size();
 
-    // Fixed column layout: icon(2) + name_col + " " + bar_col + " " + size_col
-    // Size column is always 10 chars, name column is capped so bar gets room
-    int size_col_width = 10;
-    int name_col_width = std::min(width_ - 2 - size_col_width - 6, 30); // cap name at 30
-    if (name_col_width < 8) name_col_width = 8;
+    int longest = 0;
+    for (const auto& vi : visible_items_) {
+        if (!vi.entry) continue;
+        int w = (vi.depth * INDENT_STEP) + ICON_W + static_cast<int>(vi.entry->name.length());
+        if (w > longest) longest = w;
+    }
 
-    int bar_col_start = x_start_ + 2 + name_col_width + 1;
-    int size_col_start = x_start_ + width_ - size_col_width;
-    int bar_width = size_col_start - bar_col_start - 1;
-    if (bar_width < 2) bar_width = 2;
+    // Size field wide enough for the longest formatted size in this frame
+    // ("719.99 MB" is 9 chars, "999.99 PB" too).
+    int size_field = SIZE_FIELD;
+    for (const auto& vi : visible_items_) {
+        if (!vi.entry) continue;
+        uint64_t s = (vi.entry->type == filesystem::Entry::Type::Directory)
+            ? vi.entry->total_size : vi.entry->size;
+        int l = static_cast<int>(filesystem::Entry::format_size(s).length());
+        if (l > size_field) size_field = l;
+    }
+    layout.size_field = std::min(size_field, 12);
+
+    int name_area = longest + 1; // widest row plus the gap before the size field
+    int max_name_area = right_edge - x_start_ - layout.size_field - MIN_BAR;
+    if (max_name_area < 0) max_name_area = 0;
+    if (name_area > max_name_area) name_area = max_name_area;
+
+    layout.size_x = x_start_ + name_area;
 
     int y = y_start_;
     for (int i = scroll_offset_;
          i < static_cast<int>(visible_items_.size()) && y < y_start_ + height_;
          ++i, ++y) {
         bool is_selected = (i == selected_index_);
-        render_item(*visible_items_[i], y, x_start_, 0, is_selected, max_size,
-                    name_col_width, bar_col_start, bar_width, size_col_start);
+        render_item(visible_items_[i], y, is_selected, layout);
     }
 }
 
@@ -197,7 +243,7 @@ void TreeView::handle_input(int key) {
         case 'l':
         case 10:
             if (selected_index_ >= 0 && selected_index_ < static_cast<int>(visible_items_.size())) {
-                auto* entry = visible_items_[selected_index_];
+                auto* entry = visible_items_[selected_index_].entry;
                 if (entry && entry->type == filesystem::Entry::Type::Directory) {
                     // Toggle expand/collapse
                     entry->expanded = !entry->expanded;
@@ -218,7 +264,7 @@ void TreeView::handle_input(int key) {
         case KEY_LEFT:
         case 'h':
             if (selected_index_ >= 0 && selected_index_ < static_cast<int>(visible_items_.size())) {
-                auto* entry = visible_items_[selected_index_];
+                auto* entry = visible_items_[selected_index_].entry;
                 if (entry && entry->type == filesystem::Entry::Type::Directory && entry->expanded) {
                     entry->expanded = false;
                     refresh();
@@ -230,7 +276,7 @@ void TreeView::handle_input(int key) {
 
 const filesystem::Entry* TreeView::selected() const {
     if (selected_index_ >= 0 && selected_index_ < static_cast<int>(visible_items_.size())) {
-        return visible_items_[selected_index_];
+        return visible_items_[selected_index_].entry;
     }
     return nullptr;
 }
