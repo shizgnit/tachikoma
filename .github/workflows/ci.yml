@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Windows x64 (PDCurses)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # vcpkg submodule is the dependency source for manifest mode
+          submodules: recursive
+
+      - name: Configure
+        shell: pwsh
+        run: >
+          cmake -B build -S .
+          -DCMAKE_TOOLCHAIN_FILE="${env:GITHUB_WORKSPACE}\vcpkg\scripts\buildsystems\vcpkg.cmake"
+
+      - name: Build (Release)
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (Release)
+        shell: pwsh
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # Release artifacts only on version tags
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: >
+          $ver = '${{ github.ref_name }}' -replace '^v', '';
+          Compress-Archive -Path build/Release/tachikoma.exe, build/Release/pdcurses.dll -DestinationPath "tachikoma-$ver-windows-x64.zip"
+
+      - name: Upload release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: tachikoma-windows-x64
+          path: tachikoma-*-windows-x64.zip
+          retention-days: 7
+
+  build-macos:
+    name: macOS (ncurses)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ncurses
+
+      - name: Configure
+        run: >-
+          cmake -B build -S .
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+
+      - name: Build (Release)
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tachikoma-windows-x64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.zip'
