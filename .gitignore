@@ -2,8 +2,7 @@
 build/
 cmake-build-*/
 
-# Vcpkg
-vcpkg/
+# Vcpkg (submodule is tracked; only the installed output dir is ignored)
 vcpkg_installed/
 
 # IDE
