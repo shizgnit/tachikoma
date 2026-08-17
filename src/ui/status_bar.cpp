@@ -34,7 +34,10 @@ void StatusBar::clear() {
 }
 
 bool StatusBar::has_content() const {
-    return !message_.empty() || !scanning_path_.empty() || has_progress_;
+    // A bare scanning path is auxiliary context; only a message or an active
+    // progress bar should claim the status row (otherwise a stale path would
+    // pin it forever and hide live updates).
+    return !message_.empty() || has_progress_;
 }
 
 void StatusBar::render() {
@@ -57,23 +60,30 @@ void StatusBar::render() {
         return "[" + bar + "] " + std::to_string(static_cast<int>(progress_ * 100)) + "%";
     };
 
-    if (!scanning_path_.empty()) {
-        // Show scanning path with progress bar (path keeps its tail: it is the useful part)
-        int max_path_len = width_ - 35; // room for "[scanning] [bar] NN% " + path
-        if (max_path_len < 10) max_path_len = 10;
-        std::string short_path = scanning_path_;
-        if (static_cast<int>(short_path.length()) > max_path_len) {
-            short_path = "..." + short_path.substr(short_path.length() - max_path_len + 3);
-        }
-        text = "[scanning] " + progress_bar() + " " + short_path;
-        color = 3; // cyan for scanning
-    } else if (!message_.empty()) {
-        text = has_progress_ ? message_ + " " + progress_bar() : message_;
-    } else if (has_progress_) {
+    // Live progress bar leads (it is the indicator), followed by whatever text
+    // explains it. The message wins over the scanning path so live updates are
+    // never hidden behind a stale value.
+    if (has_progress_) {
+        std::string tail = !message_.empty() ? message_ : scanning_path_;
         text = progress_bar();
+        if (!tail.empty()) {
+            text += " ";
+            text += tail;
+        }
+        color = 3; // cyan while a scan is in flight
+    } else if (!message_.empty()) {
+        text = message_;
     }
 
-    render_colored(y_, x_, truncate(text, width_), color);
+    // Truncate from the LEFT so the meaningful tail (path end / counts) stays visible.
+    std::string out = text;
+    if (width_ > 4 && static_cast<int>(out.length()) > width_) {
+        int drop = static_cast<int>(out.length()) - width_ + 4; // leave room for "..."
+        if (drop < 0) drop = 0;
+        out = "..." + out.substr(drop);
+    }
+
+    render_colored(y_, x_, truncate(out, width_), color);
 }
 
 } // namespace tachikoma::ui

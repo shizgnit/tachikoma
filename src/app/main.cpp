@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <algorithm>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -65,12 +66,12 @@ int main(int argc, char* argv[]) {
         command_bar.set_viewport(term_h - 1, 2, term_w - 4);
 
         // Unified layout: full-width tree with inline size bars
-        //                 bottom: task progress + info row + command bar
+        //                 bottom: task progress (2 rows: label + bar) + info row + command bar
         int pane_width  = term_w - 4;
-        int pane_height = term_h - 5; // reserve header(2) + progress(1) + info(1) + cmd(1)
-        if (pane_height < 4) pane_height = 4;
+        int pane_height = term_h - 6; // reserve header(2) + progress(2) + info(1) + cmd(1)
+        if (pane_height < 3) pane_height = 3;
 
-        task_progress.set_viewport(term_h - 3, 2, 1, pane_width);
+        task_progress.set_viewport(term_h - 4, 2, 2, pane_width);
 
         // Unified top-of-screen frame: full-width border on row 0, and either the
         // title or live scan status (message/progress) on row 1. Every code path
@@ -92,6 +93,14 @@ int main(int argc, char* argv[]) {
         // Shared app state
         AppState app_state;
 
+        // Row-1 scan-status bookkeeping: live done/total updates, completion
+        // banner that fades back to the title after a short while. (Declared up
+        // front so both the helpers and the main loop can share it.)
+        size_t last_reported_done{0};
+        size_t last_reported_total{0};
+        bool showing_complete = false;
+        std::chrono::steady_clock::time_point complete_shown_at{};
+
         // Flag for quit command
         std::atomic<bool> quit_requested{false};
 
@@ -105,11 +114,18 @@ int main(int argc, char* argv[]) {
             estimator.submit_directory_tasks(children);
         });
 
-        /// Helper: start background size estimation for top-level entries
+        /// Helper: start background size estimation for top-level entries.
+        /// Waits (with live UI refreshes) for any in-flight work from a previous
+        /// scan, then resets the tracker so progress counters and "N folders
+        /// estimated" stay accurate across /scan and F5 rescans.
         auto start_size_estimation = [&]() {
-            // Clear tracker state by creating fresh one would be ideal,
-            // but we reuse. Just drain old results first.
-            tracker.drain_results();
+            while (tracker.total_tasks() > 0 && !tracker.all_done()) {
+                tracker.drain_results(); // apply nothing; just drain stale payloads
+                terminal.refresh();      // keep the visible state from freezing
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            tracker.reset();
+            showing_complete = false; // re-arm the completion banner for this scan
 
             {
                 std::lock_guard<std::mutex> lock(app_state.mtx);
@@ -119,7 +135,7 @@ int main(int argc, char* argv[]) {
             size_t num_tasks = estimator.submit_directory_tasks(app_state.top_level_entries);
             task_progress.set_progress(0, num_tasks, 0);
             task_progress.set_label("Estimating folder sizes...");
-            status_bar.set_message("Launched " + std::to_string(num_tasks) + " size estimation tasks");
+            status_bar.set_message(std::to_string(num_tasks) + " size estimation task(s) launched");
         };
 
         /// Helper: do initial scan and start estimation (results are drained in the main loop)
@@ -209,6 +225,50 @@ int main(int argc, char* argv[]) {
                         std::to_string(tracker.completed_tasks()) + " folders estimated");
                 }
                 redraw_needed = true;
+            }
+
+            // Keep the row-1 scan status live and accurate on every iteration.
+            {
+                const size_t total = tracker.total_tasks();
+                const size_t done  = std::min<size_t>(tracker.completed_tasks(), total);
+
+                if (total == 0) {
+                    // Idle: make sure no stale scanning state lingers, so the title returns.
+                    if (status_bar.has_content()) {
+                        status_bar.clear();
+                        showing_complete = false;
+                        redraw_needed = true;
+                    }
+                } else if (done >= total) {
+                    // All size tasks finished: show completion, then fade back to the title.
+                    const auto now = std::chrono::steady_clock::now();
+                    if (!showing_complete) {
+                        status_bar.set_message(
+                            "Scan complete: " + std::to_string(total) + " folders estimated");
+                        status_bar.set_progress(1.0);
+                        showing_complete = true;
+                        complete_shown_at = now;
+                        last_reported_done = done;
+                        last_reported_total = total;
+                        redraw_needed = true;
+                    } else if (now - complete_shown_at > std::chrono::seconds(2)) {
+                        // Fade back to the title. Keep showing_complete latched so we do
+                        // not fight user-set messages (/status, ...) in steady state; a
+                        // fresh scan re-arms it via start_size_estimation().
+                        status_bar.clear();
+                        redraw_needed = true;
+                    }
+                } else if (done != last_reported_done || total != last_reported_total) {
+                    // In progress: live done/total and a fractional bar.
+                    status_bar.set_message(
+                        "Estimating sizes... " + std::to_string(done) + "/" +
+                        std::to_string(total) + " folders");
+                    status_bar.set_progress(static_cast<double>(done) / static_cast<double>(total));
+                    last_reported_done = done;
+                    last_reported_total = total;
+                    showing_complete = false;
+                    redraw_needed = true;
+                }
             }
 
             // Only redraw when something actually changed

@@ -242,6 +242,36 @@ TEST(TaskTrackerTest, TaskStateQuery) {
     EXPECT_EQ(result->payload, 77ULL);
 }
 
+TEST(TaskTrackerTest, ResetClearsStateForRescan) {
+    TaskTracker tracker(2);
+
+    // First "scan": one task that completes.
+    tracker.submit("first", []() -> uint64_t { return 1; });
+    for (int i = 0; i < 200 && !(tracker.total_tasks() > 0 && tracker.all_done()); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_TRUE(tracker.all_done());
+    EXPECT_EQ(tracker.completed_tasks(), 1u);
+
+    // Reset for a second "scan" (what /scan and F5 do before resubmitting).
+    tracker.reset();
+    EXPECT_EQ(tracker.total_tasks(), 0u);
+    EXPECT_EQ(tracker.completed_tasks(), 0u);
+    EXPECT_FALSE(tracker.all_done());   // fresh state: no tasks yet
+    EXPECT_TRUE(tracker.drain_results().empty());
+
+    // Tracker is fully reusable afterwards.
+    tracker.submit("second_a", []() -> uint64_t { return 10; });
+    tracker.submit("second_b", []() -> uint64_t { return 20; });
+    for (int i = 0; i < 200 && !tracker.all_done(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_EQ(tracker.total_tasks(), 2u);
+    EXPECT_TRUE(tracker.all_done());
+    // Counters reflect only the second scan, not cumulative totals.
+    EXPECT_EQ(tracker.completed_tasks(), 2u);
+}
+
 // ============================================================
 // Size Estimator Tests
 // ============================================================

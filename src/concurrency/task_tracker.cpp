@@ -106,6 +106,17 @@ void TaskTracker::cancel_all() {
     cancelled_.store(true, std::memory_order_relaxed);
 }
 
+void TaskTracker::reset() {
+    // Caller guarantees no worker is in flight; drop any stale payloads left
+    // in the queue so they cannot leak into the next scan.
+    drain_results();
+    cancelled_.store(false, std::memory_order_relaxed);
+    running_count_ = 0;
+    completed_count_ = 0;
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    tasks_.clear();
+}
+
 bool TaskTracker::all_done() const {
     size_t total = total_tasks();
     size_t done = completed_tasks();

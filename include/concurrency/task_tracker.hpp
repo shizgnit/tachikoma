@@ -82,6 +82,12 @@ public:
     /// Get result of a specific task (if available).
     std::optional<TaskResult> get_task_result(TaskId id) const;
 
+    /// Reset all state (task map, running/completed counters, queue) so the
+    /// next scan starts from a clean slate. Must be called from the consumer
+    /// thread when no worker is in flight (caller waits for all_done() first),
+    /// otherwise results of in-flight tasks would be lost or miscounted.
+    void reset();
+
 private:
     void worker(TaskId id, const std::string& label, std::function<uint64_t()> work);
 
