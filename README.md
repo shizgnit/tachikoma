@@ -16,6 +16,28 @@ A cross-platform TUI (Text User Interface) filesystem reconnaissance tool inspir
 - **Cross-platform support** (macOS, Linux, Windows)
 - **Full test coverage** with GoogleTest (37 tests)
 
+## Installation
+
+### macOS / Linux — Homebrew
+
+```bash
+brew install shizgnit/tap/tachikoma
+```
+
+(The formula builds from source against the latest tagged release.)
+
+### Windows — winget
+
+```bash
+winget install shizgnit.tachikoma
+```
+
+(Subject to review/approval in [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Until it lands, use a GitHub Release zip below.)
+
+### Any platform — GitHub Releases
+
+Download the latest release asset for your OS from <https://github.com/shizgnit/tachikoma/releases>, unzip (Windows), and run `tachikoma` in any terminal.
+
 ## Building
 
 ### Prerequisites
