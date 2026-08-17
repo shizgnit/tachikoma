@@ -121,6 +121,19 @@ TEST(SPSCQueueTest, ThreadSafeProducerConsumer) {
 // Task Tracker Tests
 // ============================================================
 
+/// Poll `pred` until it holds or the deadline passes (tests must not rely on
+/// wall-clock sleeps — under-loaded CI runners deschedule threads and fixed
+/// waits become flakes). Bounded so a regression cannot hang CI.
+template <typename Pred>
+bool wait_until(Pred pred, std::chrono::milliseconds timeout = std::chrono::seconds(2)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    for (;;) {
+        if (pred()) return true;
+        if (std::chrono::steady_clock::now() >= deadline) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+}
+
 TEST(TaskTrackerTest, SubmitAndComplete) {
     TaskTracker tracker(2);
 
@@ -130,8 +143,8 @@ TEST(TaskTrackerTest, SubmitAndComplete) {
 
     EXPECT_GT(id, 0ULL);
 
-    // Wait for completion
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait deterministically for completion
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }));
 
     auto results = tracker.drain_results();
     ASSERT_FALSE(results.empty());
@@ -152,9 +165,8 @@ TEST(TaskTrackerTest, MultipleTasks) {
 
     EXPECT_EQ(tracker.total_tasks(), 5u);
 
-    // Wait for all to complete
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
+    // Wait for all to complete (bounded poll, not a wall-clock guess)
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }, std::chrono::seconds(3)));
     EXPECT_TRUE(tracker.all_done());
     EXPECT_EQ(tracker.completed_tasks(), 5u);
     EXPECT_EQ(tracker.running_tasks(), 0u);
@@ -168,7 +180,7 @@ TEST(TaskTrackerTest, TaskFailure) {
         throw std::runtime_error("intentional failure");
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }));
 
     auto results = tracker.drain_results();
     ASSERT_FALSE(results.empty());
@@ -180,21 +192,36 @@ TEST(TaskTrackerTest, ProgressTracking) {
     TaskTracker tracker(2);
 
     tracker.submit("slow_1", []() -> uint64_t {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         return 1;
     });
     tracker.submit("slow_2", []() -> uint64_t {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         return 2;
     });
 
     EXPECT_EQ(tracker.total_tasks(), 2u);
-    EXPECT_DOUBLE_EQ(tracker.progress(), 0.0);
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Right after submit, progress is somewhere in [0,1] — asserting an exact
+    // snapshot here would be a scheduling guess.
+    double p = tracker.progress();
+    EXPECT_GE(p, 0.0);
+    EXPECT_LE(p, 1.0);
+
+    // Wait deterministically for completion.
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }, std::chrono::seconds(3)));
     EXPECT_DOUBLE_EQ(tracker.progress(), 1.0);
 
-    tracker.drain_results();
+    // Every completed payload must be drainable (regression: results used to
+    // be published AFTER the completion counters, so this could miss items).
+    auto results = tracker.drain_results();
+    size_t done_payloads = 0;
+    for (const auto& r : results) {
+        if (r.state == TaskState::Done && (r.payload == 1 || r.payload == 2)) {
+            ++done_payloads;
+        }
+    }
+    EXPECT_EQ(done_payloads, 2u);
 }
 
 TEST(TaskTrackerTest, CancelAll) {
@@ -208,21 +235,23 @@ TEST(TaskTrackerTest, CancelAll) {
     tracker.cancel_all();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    // New tasks after cancel should be cancelled immediately
+    // New tasks after cancel should be cancelled immediately — poll until the
+    // result is actually in the queue instead of guessing at a fixed delay.
     auto id = tracker.submit("cancelled", []() -> uint64_t {
         return 42;
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    auto results = tracker.drain_results();
-
     bool found_cancelled = false;
-    for (const auto& r : results) {
-        if (r.id == id) {
-            found_cancelled = true;
-            EXPECT_EQ(r.state, TaskState::Cancelled);
+    EXPECT_TRUE(wait_until([&] {
+        for (const auto& r : tracker.drain_results()) {
+            if (r.id == id) {
+                found_cancelled = true;
+                EXPECT_EQ(r.state, TaskState::Cancelled);
+                return true;
+            }
         }
-    }
+        return false;
+    }));
     EXPECT_TRUE(found_cancelled);
 }
 
@@ -230,11 +259,11 @@ TEST(TaskTrackerTest, TaskStateQuery) {
     TaskTracker tracker(2);
 
     auto id = tracker.submit("state_test", []() -> uint64_t {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
         return 77;
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }, std::chrono::seconds(3)));
     tracker.drain_results();
 
     EXPECT_EQ(tracker.get_task_state(id), TaskState::Done);
@@ -348,7 +377,10 @@ TEST(SizeEstimatorTest, SubmitAndApplyResults) {
     TaskTracker tracker(2);
     SizeEstimator estimator(tracker);
 
-    fs::path tmp = fs::temp_directory_path() / "tachikoma_estimator_test";
+    // Unique per-run dir so leftovers from an earlier crashed run can't add
+    // unexpected entries to the listing.
+    std::random_device rd;
+    fs::path tmp = fs::temp_directory_path() / ("tachikoma_estimator_test_" + std::to_string(rd()));
     fs::create_directories(tmp / "dir_a");
     fs::create_directories(tmp / "dir_b");
 
@@ -367,8 +399,8 @@ TEST(SizeEstimatorTest, SubmitAndApplyResults) {
     size_t submitted = estimator.submit_directory_tasks(mutable_entries);
     EXPECT_GT(submitted, 0u);
 
-    // Wait for tasks
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Wait for tasks (bounded poll — fixed sleeps flake on loaded CI runners)
+    EXPECT_TRUE(wait_until([&] { return tracker.all_done(); }, std::chrono::seconds(3)));
 
     // Drain and apply
     auto results = tracker.drain_results();
