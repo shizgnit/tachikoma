@@ -71,11 +71,14 @@ void TaskTracker::worker(TaskId id, const std::string& label, std::function<uint
         }
     }
 
-    running_count_.fetch_sub(1, std::memory_order_relaxed);
-    completed_count_.fetch_add(1, std::memory_order_relaxed);
-
-    // Push to lock-free queue for the consumer thread
+    // Publish the payload BEFORE bumping completion counters so that any
+    // observer who sees all_done()==true is guaranteed (via the release/acquire
+    // pair on completed_count_) to already see every queued result. The reverse
+    // order let consumers exit their drain loop with results still in flight.
     result_queue_.push(std::move(result));
+
+    running_count_.fetch_sub(1, std::memory_order_release);
+    completed_count_.fetch_add(1, std::memory_order_release);
 }
 
 std::vector<QueuePayload> TaskTracker::drain_results() {
@@ -88,11 +91,13 @@ size_t TaskTracker::total_tasks() const {
 }
 
 size_t TaskTracker::running_tasks() const {
-    return running_count_.load(std::memory_order_relaxed);
+    // Acquire: pairs with the release on completion so queued payloads are
+    // visible by the time counters report progress.
+    return running_count_.load(std::memory_order_acquire);
 }
 
 size_t TaskTracker::completed_tasks() const {
-    return completed_count_.load(std::memory_order_relaxed);
+    return completed_count_.load(std::memory_order_acquire);
 }
 
 double TaskTracker::progress() const {

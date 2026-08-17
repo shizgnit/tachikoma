@@ -9,6 +9,8 @@
 #include <chrono>
 #include <atomic>
 #include <numeric>
+#include <random>
+#include <string>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -395,7 +397,10 @@ TEST(IntegrationTest, FullPipeline) {
     TaskTracker tracker(4);
     SizeEstimator estimator(tracker);
 
-    fs::path tmp = fs::temp_directory_path() / "tachikoma_pipeline";
+    // Unique per-run directory: a fixed name can be polluted by leftovers from
+    // earlier (crashed) runs and change what list_directory sees.
+    std::random_device rd;
+    fs::path tmp = fs::temp_directory_path() / ("tachikoma_pipeline_" + std::to_string(rd()));
     fs::create_directories(tmp / "big");
     fs::create_directories(tmp / "medium");
     fs::create_directories(tmp / "small");
@@ -418,12 +423,18 @@ TEST(IntegrationTest, FullPipeline) {
     size_t n = estimator.submit_directory_tasks(mutable_entries);
     EXPECT_EQ(n, 3u);
 
-    // Wait and drain in a loop (simulates main loop polling)
+    // Wait and drain in a loop (simulates main loop polling). Keep going until
+    // the queue is empty AND all tasks are done — exiting on all_done() alone
+    // could leave queued results unapplied depending on scheduling.
     int iterations = 0;
-    while (!tracker.all_done() && iterations < 50) {
+    bool quiescent = false;
+    while (!quiescent && iterations < 200) {
         auto results = tracker.drain_results();
         estimator.apply_results(results, mutable_entries);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        quiescent = results.empty() && tracker.all_done();
+        if (!quiescent) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         ++iterations;
     }
 
