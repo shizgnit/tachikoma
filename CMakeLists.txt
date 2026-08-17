@@ -61,6 +61,7 @@ target_link_libraries(tachikoma_ui PUBLIC Threads::Threads)
 add_executable(tachikoma src/app/main.cpp)
 target_link_libraries(tachikoma PRIVATE tachikoma_ui tachikoma_fs)
 target_compile_features(tachikoma PRIVATE cxx_std_20)
+target_compile_definitions(tachikoma PRIVATE TACHIKOMA_VERSION="${PROJECT_VERSION}")
 
 # Testing
 enable_testing()

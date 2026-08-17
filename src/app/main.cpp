@@ -31,6 +31,26 @@ struct AppState {
 };
 
 int main(int argc, char* argv[]) {
+    // CLI flags (handled before curses init so they work non-interactively)
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg == "--version" || arg == "-v") {
+            std::cout << "tachikoma " TACHIKOMA_VERSION "\n";
+            return 0;
+        }
+        if (arg == "--help" || arg == "-h") {
+            std::cout <<
+                "tachikoma - terminal-based filesystem reconnaissance\n"
+                "\n"
+                "Usage: tachikoma [path] [--version | --help]\n"
+                "\n"
+                "Scans the given directory tree (default: current directory)\n"
+                "and shows an interactive, size-aware listing. Press h inside\n"
+                "the UI for key bindings; q quits.\n";
+            return 0;
+        }
+    }
+
     // Determine target path
     std::string target_path = ".";
     if (argc > 1) {
