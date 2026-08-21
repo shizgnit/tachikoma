@@ -89,12 +89,17 @@ int main(int argc, char* argv[]) {
         taskbar.set_viewport(term_h - 2);
         command_bar.set_viewport(term_h - 1, 1, term_w - 2);
 
-        // Frame borders: top edge with a btop-style title block + bottom edge.
+        // Frame borders: a full btop-style box around the directory panel —
+        // top edge with title block, bottom edge, and vertical side rails.
+        // The tree viewport (x=1..w-2) sits exactly inside the rails.
         auto draw_frame = [&](int w, int h) {
             if (w < 8 || h < 6) return;
             const int bc = ui::theme_pair(ui::ThemeColor::Border);
             ui::draw_box_top(0, 0, w, bc);
             ui::render_bold(0, 1, "[ DIRECTORIES ]", ui::theme_pair(ui::ThemeColor::Title));
+            const int side_h = h - 4; // rows between top edge (0) and bottom edge (h-3)
+            ui::draw_box_side(1, 0, side_h, bc);
+            ui::draw_box_side(1, w - 1, side_h, bc);
             ui::draw_box_bottom(h - 3, 0, w, bc);
         };
 

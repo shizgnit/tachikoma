@@ -46,6 +46,13 @@ void draw_box_bottom(int y, int x, int width, int cp) {
     draw_box_top(y, x, width, cp); // same shape on the bottom edge
 }
 
+void draw_box_side(int y_start, int x, int height, int cp) {
+    if (height < 1) return;
+    if (cp >= 0) attrset(COLOR_PAIR(cp));
+    for (int i = 0; i < height; ++i) mvaddch(y_start + i, x, '|');
+    attrset(A_NORMAL);
+}
+
 void render_char(int y, int x, char ch) {
     attrset(A_NORMAL);
     mvaddch(y, x, ch);

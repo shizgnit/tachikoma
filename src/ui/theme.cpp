@@ -39,16 +39,17 @@ bool define_color(short slot, int r8, int g8, int b8) {
     return init_color(slot, R, G, B) == OK;
 }
 
-// btop default theme (Nord palette):
-//   background #2E3440, font #D8DEE9, title/frost #8FBCBB, hi/blue #5E81AC,
-//   border/dim/selected-bg #4C566A, ok green #A3BE8C, warn yellow #EBCB8B,
-//   crit red #BF616A.
+// btop default theme (Nord palette), translucent variant:
+//   font #D8DEE9, title/frost #8FBCBB, hi/blue #5E81AC, ok green #A3BE8C,
+//   warn yellow #EBCB8B, crit red #BF616A - all as soft foregrounds over the
+//   terminal's OWN background (no opaque canvas), so a translucent terminal
+//   stays translucent and nothing clashes with the surrounding window.
+//   Selection accent: dim slate #4C566A background for highlighted rows only.
 const std::pair<short, std::array<int, 3>> kPalette[] = {
-    {COLOR_BLACK,   {0x2E, 0x34, 0x40}},
     {COLOR_WHITE,   {0xD8, 0xDE, 0xE9}},
     {COLOR_CYAN,    {0x8F, 0xBC, 0xBB}},
     {COLOR_BLUE,    {0x5E, 0x81, 0xAC}},
-    {COLOR_MAGENTA, {0x4C, 0x56, 0x6A}},
+    {COLOR_MAGENTA, {0x4C, 0x56, 0x6A}}, // selection-row background accent
     {COLOR_GREEN,   {0xA3, 0xBE, 0x8C}},
     {COLOR_YELLOW,  {0xEB, 0xCB, 0x8B}},
     {COLOR_RED,     {0xBF, 0x61, 0x6A}},
@@ -65,23 +66,23 @@ void init_theme() {
         }
     }
 
-    // Semantic pairs. Background slot (COLOR_BLACK) now holds the theme bg;
-    // selection pairs use the dim-slate slot as their background.
-    init_pair(201, COLOR_WHITE, COLOR_BLACK);
-    init_pair(202, COLOR_CYAN, COLOR_BLACK);
-    init_pair(203, COLOR_BLUE, COLOR_BLACK);
-    init_pair(204, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(205, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(206, COLOR_GREEN, COLOR_BLACK);
-    init_pair(207, COLOR_YELLOW, COLOR_BLACK);
-    init_pair(208, COLOR_RED, COLOR_BLACK);
+    // Semantic pairs. All regular text uses COLOR_DEFAULT (-1) as its
+    // background so every cell inherits the terminal's native background -
+    // one consistent color everywhere, translucent when the terminal is.
+    // Only selection accents (209/210) carry an explicit background.
+    init_pair(201, COLOR_WHITE, -1);
+    init_pair(202, COLOR_CYAN, -1);
+    init_pair(203, COLOR_BLUE, -1);
+    init_pair(204, COLOR_MAGENTA, -1);
+    init_pair(205, COLOR_MAGENTA, -1);
+    init_pair(206, COLOR_GREEN, -1);
+    init_pair(207, COLOR_YELLOW, -1);
+    init_pair(208, COLOR_RED, -1);
     init_pair(209, COLOR_WHITE, COLOR_MAGENTA);
     init_pair(210, COLOR_CYAN, COLOR_MAGENTA);
 
-    // Paint the whole canvas with the theme background (bkgd makes werase()
-    // fill with it), so the app presents a full dark frame like btop.
-    // Note: single-argument form - portable across ncurses and PDCurses.
-    bkgd(static_cast<chtype>(' ') | static_cast<chtype>(COLOR_PAIR(201)));
+    // Deliberately NO bkgd(): the canvas keeps the terminal's own background
+    // (translucent when the terminal is), instead of painting an opaque box.
 }
 
 int theme_pair(ThemeColor c) {

@@ -32,6 +32,10 @@ void fill_row(int y, int x, int width, int color_pair);
 void draw_box_top(int y, int x, int width, int color_pair = -1);
 void draw_box_bottom(int y, int x, int width, int color_pair = -1);
 
+/// Draw a vertical border rail (column of '|') for a panel side. Combined with
+/// draw_box_top()/draw_box_bottom() at the ends it forms a full btop-style box.
+void draw_box_side(int y_start, int x, int height, int color_pair = -1);
+
 /// Draw a single character with plain (unpaired) attributes
 void render_char(int y, int x, char ch);
 
