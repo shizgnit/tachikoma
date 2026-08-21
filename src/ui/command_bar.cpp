@@ -1,5 +1,6 @@
 #include "ui/command_bar.hpp"
 #include "ui/renderer.hpp"
+#include "ui/theme.hpp"
 #include "ui/input.hpp" // KEY_* codes (platform input abstraction)
 #include <algorithm>
 
@@ -20,23 +21,44 @@ void CommandBar::set_viewport(int y, int x, int width) {
 
 void CommandBar::render() {
     if (help_mode_) {
-        // Render help overlay
         render_help_overlay();
-    } else if (active_) {
-        // Show input with suggestions
-        std::string prompt = "/" + input_;
-        render_colored(y_, x_, prompt, 3); // cyan
+        return;
+    }
 
-        // Show suggestions if available
-        if (!suggestions_.empty() && suggestion_index_ >= 0) {
-            int sug_x = x_ + static_cast<int>(prompt.length()) + 1;
-            if (sug_x + static_cast<int>(suggestions_[suggestion_index_].length()) < x_ + width_) {
-                render_colored(y_, sug_x, "[" + suggestions_[suggestion_index_] + "]", 4); // yellow highlight
+    if (!active_) {
+        // Idle hint: muted text with blue command keywords (btop style).
+        int x = x_;
+        auto kw  = [&](const std::string& t) { render_colored(y_, x, t, theme_pair(ThemeColor::Hi));   x += static_cast<int>(t.size()); };
+        auto dim = [&](const std::string& t) { render_colored(y_, x, t, theme_pair(ThemeColor::Muted)); x += static_cast<int>(t.size()); };
+        kw("/help");  dim("  ");
+        kw("/scan <path>");  dim("   ");
+        kw("/path <dir>");  dim("   ");
+        kw("/status");  dim("   ");
+        kw("/quit");
+        return;
+    }
+
+    // Active input: btop-style highlighted block around the typed text,
+    // with a frost cursor marker and yellow suggestions.
+    const std::string text = "/" + input_;
+    const int len = static_cast<int>(text.size());
+    const int x = x_;
+    fill_row(y_, x, len + 5, theme_pair(ThemeColor::SelText)); // "[ /scan# ]"
+
+    render_colored(y_, x,        "[",  theme_pair(ThemeColor::SelAccent));
+    render_bold   (y_, x + 2,    text, theme_pair(ThemeColor::SelText));
+    render_colored(y_, x + 2 + len, "#", theme_pair(ThemeColor::SelAccent));
+
+    if (!suggestions_.empty() && suggestion_index_ >= 0) {
+        const std::string& s = suggestions_[static_cast<size_t>(suggestion_index_)];
+        int sug_x = x + len + 7; // past "[ /scan# ] "
+        if (sug_x < x + width_) {
+            std::string shown = "[" + s + "]";
+            if (sug_x + static_cast<int>(shown.size()) > x + width_) {
+                shown = truncate(shown, static_cast<size_t>(x + width_ - sug_x));
             }
+            render_colored(y_, sug_x, shown, theme_pair(ThemeColor::Warn));
         }
-    } else {
-        // Show hint text
-        render_colored(y_, x_, "/ for commands", 1); // default white
     }
 }
 
@@ -193,27 +215,38 @@ void CommandBar::render_help_overlay() {
     int start_x = (term_width - 60) / 2;
     if (start_x < 2) start_x = 2;
 
-    // Title
-    std::string title = "  TACHIKOMA - Available Commands  ";
+    // Title (frost accent)
+    std::string title = "TACHIKOMA — Available Commands";
     int title_x = (term_width - static_cast<int>(title.length())) / 2;
-    render_colored(start_y, title_x, title, 2); // green
+    render_bold(start_y, title_x, title, theme_pair(ThemeColor::Title));
 
-    // Commands
-    int cmd_y = start_y + 2;
-    size_t max_cmds = static_cast<size_t>(overlay_height - 4);
-    for (size_t i = 0; i < commands_.size() && i < max_cmds; ++i) {
-        std::string line = "  /" + commands_[i].name + " - " + commands_[i].description;
-        if (static_cast<int>(line.length()) > term_width - 4) {
-            line = line.substr(0, term_width - 7) + "...";
+    // Divider under the title
+    if (term_width > 10) {
+        std::string div(std::min<size_t>(56, static_cast<size_t>(term_width - 4)), '-');
+        render_colored(start_y + 1, (term_width - static_cast<int>(div.size())) / 2, div, theme_pair(ThemeColor::Border));
+    }
+
+    // Commands: blue keyword + muted description (btop help-list style)
+    int cmd_y = start_y + 3;
+    size_t max_cmds = static_cast<size_t>(overlay_height - 5);
+    for (size_t i = 0; i < commands_.size() && i < max_cmds; ++cmd_y, ++i) {
+        const std::string& name = commands_[i].name;
+        const std::string& desc = commands_[i].description;
+        int x = std::max(2, (term_width - 40) / 2);
+        render_colored(cmd_y, x, "/" + name, theme_pair(ThemeColor::Hi));
+        x += static_cast<int>(name.size()) + 3;
+        if (!desc.empty() && x < term_width - 2) {
+            std::string d = desc;
+            int room = term_width - 2 - x;
+            if (static_cast<int>(d.size()) > room) d = truncate(d, static_cast<size_t>(room));
+            render_colored(cmd_y, x, " — " + d, theme_pair(ThemeColor::Muted));
         }
-        render_colored(cmd_y, 2, line, 3); // cyan for command name
-        ++cmd_y;
     }
 
     // Footer
-    std::string footer = "  Press any key to dismiss  ";
+    std::string footer = "Press any key to dismiss";
     int footer_x = (term_width - static_cast<int>(footer.length())) / 2;
-    render_colored(cmd_y + 1, footer_x, footer, 4); // yellow
+    render_colored(cmd_y + 1, footer_x, footer, theme_pair(ThemeColor::Warn));
 }
 
 } // namespace tachikoma::ui

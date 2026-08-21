@@ -4,8 +4,8 @@
 #include "ui/tree_view.hpp"
 #include "ui/logo.hpp"
 #include "ui/command_bar.hpp"
-#include "ui/status_bar.hpp"
-#include "ui/task_progress.hpp"
+#include "ui/task_bar.hpp"
+#include "ui/theme.hpp"
 #include "filesystem/scanner.hpp"
 #include "filesystem/entry.hpp"
 #include "filesystem/size_estimator.hpp"
@@ -67,9 +67,8 @@ int main(int argc, char* argv[]) {
         ui::render_startup_screen();
 
         // Set up components
-        ui::StatusBar status_bar;
+        ui::TaskBar taskbar;
         ui::CommandBar command_bar;
-        ui::TaskProgress task_progress;
         filesystem::Scanner scanner;
 
         // Background task infrastructure
@@ -79,47 +78,41 @@ int main(int argc, char* argv[]) {
         int term_w = terminal.width();
         int term_h = terminal.height();
 
-        // Status/scan-status content lives on row 1 (row 0 is the border line)
-        status_bar.set_viewport(1, 2, term_w - 4);
+        // btop-style layout (full-width frame):
+        //   row 0       : box top border with the [ DIRECTORIES ] title block
+        //   rows 1..h-4 : directory tree — the primary display area
+        //   row h-3     : box bottom border
+        //   row h-2     : task bar (path, live scan state, totals, clock)
+        //   row h-1     : command input line (text entry stays exactly as before)
+        int content_h = std::max(1, term_h - 4);
 
-        // Configure command bar (bottom row)
-        command_bar.set_viewport(term_h - 1, 2, term_w - 4);
+        taskbar.set_viewport(term_h - 2);
+        command_bar.set_viewport(term_h - 1, 1, term_w - 2);
 
-        // Unified layout: full-width tree with inline size bars
-        //                 bottom: task progress (2 rows: label + bar) + info row + command bar
-        int pane_width  = term_w - 4;
-        int pane_height = term_h - 6; // reserve header(2) + progress(2) + info(1) + cmd(1)
-        if (pane_height < 3) pane_height = 3;
-
-        task_progress.set_viewport(term_h - 4, 2, 2, pane_width);
-
-        // Unified top-of-screen frame: full-width border on row 0, and either the
-        // title or live scan status (message/progress) on row 1. Every code path
-        // that shows scanning state goes through this one function so the
-        // indicator can never be forgotten by a particular call site.
-        auto draw_frame_top = [&](ui::StatusBar& sb) {
-            int width = terminal.width();
-            if (width < 8) return;
-            terminal.clear();
-            std::string line(width - 2, '=');
-            ui::render_colored(0, 0, "+" + line + "+", 2); // green border
-            if (sb.has_content()) {
-                sb.render(); // row 1: scan progress / message
-            } else {
-                ui::render_text(1, 2, "TACHIKOMA - Filesystem Reconnaissance System");
-            }
+        // Frame borders: top edge with a btop-style title block + bottom edge.
+        auto draw_frame = [&](int w, int h) {
+            if (w < 8 || h < 6) return;
+            const int bc = ui::theme_pair(ui::ThemeColor::Border);
+            ui::draw_box_top(0, 0, w, bc);
+            ui::render_bold(0, 1, "[ DIRECTORIES ]", ui::theme_pair(ui::ThemeColor::Title));
+            ui::draw_box_bottom(h - 3, 0, w, bc);
         };
 
         // Shared app state
         AppState app_state;
 
-        // Row-1 scan-status bookkeeping: live done/total updates, completion
-        // banner that fades back to the title after a short while. (Declared up
-        // front so both the helpers and the main loop can share it.)
-        size_t last_reported_done{0};
-        size_t last_reported_total{0};
-        bool showing_complete = false;
-        std::chrono::steady_clock::time_point complete_shown_at{};
+        // Scan-state bookkeeping for the task bar: one latched "done" flag per
+        // scan (so the completion note appears exactly once), a settled flag so
+        // the bar stays READY after the note fades, and transient notes with a TTL.
+        bool scan_latched_done{false};
+        bool taskbar_settled{true};
+        std::string active_note;
+        std::chrono::steady_clock::time_point note_set_at{};
+        const auto NOTE_TTL = std::chrono::seconds(4);
+
+        // Command input + main-loop state (declared early so commands can flag redraws).
+        bool running = true;
+        bool redraw_needed = true; // force initial draw
 
         // Flag for quit command
         std::atomic<bool> quit_requested{false};
@@ -145,7 +138,6 @@ int main(int argc, char* argv[]) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
             tracker.reset();
-            showing_complete = false; // re-arm the completion banner for this scan
 
             {
                 std::lock_guard<std::mutex> lock(app_state.mtx);
@@ -153,19 +145,24 @@ int main(int argc, char* argv[]) {
             }
 
             size_t num_tasks = estimator.submit_directory_tasks(app_state.top_level_entries);
-            task_progress.set_progress(0, num_tasks, 0);
-            task_progress.set_label("Estimating folder sizes...");
-            status_bar.set_message(std::to_string(num_tasks) + " size estimation task(s) launched");
+            scan_latched_done = false; // re-arm the completion note for this scan
+            taskbar_settled   = false;
+            active_note.clear();
+            taskbar.set_scan(ui::TaskBar::ScanState::Running, 0, num_tasks);
         };
 
         /// Helper: do initial scan and start estimation (results are drained in the main loop)
         auto do_full_scan = [&]() {
-            // Immediate first frame: border + scan status on row 1 before the
+            // Immediate first frame: framed view with the task bar before the
             // shallow listing starts, so feedback is never missing.
-            status_bar.set_scanning_path(target_path);
-            status_bar.set_message("Scanning filesystem...");
-            status_bar.set_progress(0.0);
-            draw_frame_top(status_bar);
+            taskbar.set_path(target_path);
+            scan_latched_done = false;
+            taskbar_settled   = true; // show READY while the shallow list runs
+            active_note.clear();
+            terminal.clear();
+            draw_frame(term_w, term_h);
+            taskbar.render();
+            command_bar.render();
             terminal.refresh();
 
             // Quick shallow scan (list top-level only)
@@ -193,7 +190,8 @@ int main(int argc, char* argv[]) {
                 root.children = app_state.top_level_entries;
             }
             tree_view.set_root(root);
-            tree_view.set_viewport(2, 2, pane_height, pane_width);
+            // TreeView::set_viewport takes (y_start, x_start, height, width).
+            tree_view.set_viewport(1, 1, content_h, term_w - 2);
         };
 
         // Register slash commands
@@ -209,21 +207,26 @@ int main(int argc, char* argv[]) {
             do_full_scan();
         });
 
-        command_bar.register_command("path", "Change scan path", [&]() {
-            status_bar.set_message("Current path: " + target_path);
+        // Transient task-bar note (auto-expires after NOTE_TTL).
+        auto show_note = [&](const std::string& text) {
+            active_note = text;
+            note_set_at = std::chrono::steady_clock::now();
+            redraw_needed = true;
+        };
+
+        command_bar.register_command("path", "Show current scan path", [&]() {
+            show_note("Current path: " + target_path);
         });
 
         command_bar.register_command("status", "Show system status", [&]() {
-            status_bar.set_message("Tachikoma v0.1.0 - All systems operational");
+            show_note("Tachikoma v0.1.0 - All systems operational");
         });
 
         // Initial scan (shallow list + background size estimation with live progress)
         do_full_scan();
 
         // Main loop
-        bool running = true;
-        bool redraw_needed = true; // force initial draw
-
+        std::time_t last_clock_sec{-1};
         while (running) {
             // Process any completed background results
             auto results = tracker.drain_results();
@@ -235,66 +238,68 @@ int main(int argc, char* argv[]) {
                     estimator.apply_results_recursive(results, tree_view.mutable_root());
                     filesystem::SizeEstimator::sort_by_size_recursive(tree_view.mutable_root());
                 }
-                task_progress.set_progress(
-                    tracker.completed_tasks(), tracker.total_tasks(), tracker.running_tasks());
                 if (tracker.all_done()) {
                     app_state.sizes_ready = true;
-                    task_progress.set_label("Size estimation complete!");
-                    status_bar.set_message(
-                        "Scan complete: " +
-                        std::to_string(tracker.completed_tasks()) + " folders estimated");
                 }
                 redraw_needed = true;
             }
 
-            // Keep the row-1 scan status live and accurate on every iteration.
+            // Keep the task-bar scan state live and accurate on every iteration.
             {
                 const size_t total = tracker.total_tasks();
                 const size_t done  = std::min<size_t>(tracker.completed_tasks(), total);
 
-                if (total == 0) {
-                    // Idle: make sure no stale scanning state lingers, so the title returns.
-                    if (status_bar.has_content()) {
-                        status_bar.clear();
-                        showing_complete = false;
-                        redraw_needed = true;
-                    }
-                } else if (done >= total) {
-                    // All size tasks finished: show completion, then fade back to the title.
+                if (total > 0 && done < total) {
+                    // In progress: live done/total with a mini bar in the task bar.
+                    scan_latched_done = false;
+                    taskbar_settled   = false;
+                    taskbar.set_scan(ui::TaskBar::ScanState::Running, done, total);
+                } else if (total > 0) {
+                    // All size tasks finished: latch completion once, show the note
+                    // briefly, then settle back to READY.
                     const auto now = std::chrono::steady_clock::now();
-                    if (!showing_complete) {
-                        status_bar.set_message(
-                            "Scan complete: " + std::to_string(total) + " folders estimated");
-                        status_bar.set_progress(1.0);
-                        showing_complete = true;
-                        complete_shown_at = now;
-                        last_reported_done = done;
-                        last_reported_total = total;
-                        redraw_needed = true;
-                    } else if (now - complete_shown_at > std::chrono::seconds(2)) {
-                        // Fade back to the title. Keep showing_complete latched so we do
-                        // not fight user-set messages (/status, ...) in steady state; a
-                        // fresh scan re-arms it via start_size_estimation().
-                        status_bar.clear();
-                        redraw_needed = true;
+                    if (!scan_latched_done) {
+                        scan_latched_done = true;
+                        active_note  = "Scan complete: " + std::to_string(total) + " folders estimated";
+                        note_set_at  = now;
+                        taskbar_settled = false;
+                        redraw_needed   = true;
+                    } else if (!taskbar_settled && now - note_set_at > NOTE_TTL) {
+                        taskbar_settled = true; // stays READY until the next scan
+                        active_note.clear();
+                        redraw_needed  = true;
                     }
-                } else if (done != last_reported_done || total != last_reported_total) {
-                    // In progress: live done/total and a fractional bar.
-                    status_bar.set_message(
-                        "Estimating sizes... " + std::to_string(done) + "/" +
-                        std::to_string(total) + " folders");
-                    status_bar.set_progress(static_cast<double>(done) / static_cast<double>(total));
-                    last_reported_done = done;
-                    last_reported_total = total;
-                    showing_complete = false;
+                    taskbar.set_scan(taskbar_settled
+                        ? ui::TaskBar::ScanState::Idle
+                        : ui::TaskBar::ScanState::Running);
+                } else {
+                    // No tasks at all (e.g. a path with no subdirectories): READY.
+                    scan_latched_done = false;
+                    taskbar_settled   = true;
+                    taskbar.set_scan(ui::TaskBar::ScanState::Idle);
+                }
+
+                // Expire transient notes (/path, /status).
+                if (!active_note.empty() && std::chrono::steady_clock::now() - note_set_at > NOTE_TTL) {
+                    active_note.clear();
                     redraw_needed = true;
                 }
+                taskbar.set_note(active_note);
+            }
+
+            // Advance the task-bar clock once per second.
+            const std::time_t now_sec = std::time(nullptr);
+            if (now_sec != last_clock_sec) {
+                last_clock_sec  = now_sec;
+                redraw_needed   = true;
             }
 
             // Only redraw when something actually changed
             if (redraw_needed) {
-                // Top rows: full-width border + (title or live scan status) — single code path
-                draw_frame_top(status_bar);
+                terminal.clear();
+
+                // Frame borders with the [ DIRECTORIES ] title block.
+                draw_frame(terminal.width(), terminal.height());
 
                 // Update tree view children from latest scan results (without resetting selection)
                 {
@@ -303,20 +308,20 @@ int main(int argc, char* argv[]) {
                 }
                 tree_view.render();
 
-                // Task progress widget (bottom)
-                task_progress.render();
-
-                // Selected item info row
-                auto* selected = tree_view.selected();
-                if (selected) {
-                    std::string status = "Path: " + selected->path +
-                                        " | Size: " + filesystem::Entry::format_size(
-                                           selected->type == filesystem::Entry::Type::Directory ?
-                                           selected->total_size : selected->size);
-                    ui::render_text(term_h - 2, 2, ui::truncate(status, term_w - 4));
+                // Task bar: live totals for the scanned entries, then render.
+                size_t entries = 0;
+                uint64_t bytes = 0;
+                {
+                    std::lock_guard<std::mutex> lock(app_state.mtx);
+                    entries = app_state.top_level_entries.size();
+                    for (const auto& e : app_state.top_level_entries) {
+                        bytes += (e.type == filesystem::Entry::Type::Directory) ? e.total_size : e.size;
+                    }
                 }
+                taskbar.set_totals(entries, bytes);
+                taskbar.render();
 
-                // Command bar
+                // Command bar (text input line).
                 command_bar.render();
 
                 terminal.refresh();

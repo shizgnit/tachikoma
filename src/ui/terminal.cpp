@@ -5,6 +5,7 @@
 // PDCurses differences stay contained in this one place.
 
 #include "ui/terminal.hpp"
+#include "ui/theme.hpp"
 #include <cstdlib>
 #include <stdexcept>
 
@@ -77,6 +78,10 @@ void Terminal::init() {
         init_pair(8, COLOR_WHITE, COLOR_BLUE); // Selection highlight
         init_pair(9, COLOR_GREEN, COLOR_BLUE); // Green on blue
         init_pair(10, COLOR_BLACK, COLOR_GREEN); // Inverse green
+
+        // btop-style Nord theme: redefines the standard color slots to exact
+        // RGB values and sets up the semantic pairs + dark canvas background.
+        init_theme();
     }
 
     initialized_ = true;

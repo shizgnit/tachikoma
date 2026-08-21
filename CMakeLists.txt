@@ -38,6 +38,8 @@ add_library(tachikoma_ui STATIC
     src/ui/status_bar.cpp
     src/ui/bar_chart.cpp
     src/ui/task_progress.cpp
+    src/ui/theme.cpp
+    src/ui/task_bar.cpp
 )
 target_include_directories(tachikoma_ui PUBLIC include)
 target_link_libraries(tachikoma_ui PUBLIC tachikoma_fs)

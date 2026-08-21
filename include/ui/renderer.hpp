@@ -21,6 +21,17 @@ void render_text(int y, int x, const std::string& text, Attr attr = Attr::Normal
 /// Render a colored text string
 void render_colored(int y, int x, const std::string& text, int color_pair);
 
+/// Render bold colored text (selection rows)
+void render_bold(int y, int x, const std::string& text, int color_pair);
+
+/// Fill a horizontal run of cells with the given color pair's background
+/// (used for full-row selection highlights and input blocks)
+void fill_row(int y, int x, int width, int color_pair);
+
+/// Draw a box top/bottom edge: +----...----+ (width >= 2)
+void draw_box_top(int y, int x, int width, int color_pair = -1);
+void draw_box_bottom(int y, int x, int width, int color_pair = -1);
+
 /// Draw a single character with plain (unpaired) attributes
 void render_char(int y, int x, char ch);
 

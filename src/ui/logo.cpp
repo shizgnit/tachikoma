@@ -1,5 +1,6 @@
 #include "ui/logo.hpp"
 #include "ui/renderer.hpp"
+#include "ui/theme.hpp"
 #include "ui/input.hpp"
 #include <string>
 #include <thread>
@@ -49,18 +50,18 @@ void render_startup_screen() {
     int start_y = (term_height - logo_height) / 2;
     if (start_y < 2) start_y = 2;
 
-    // Render logo with color
+    // Render logo with the theme palette (btop-style accents)
     for (int i = 0; i < logo_height && (start_y + i) < term_height; ++i) {
         int x = center_x(logo[i], term_width);
         if (i < 6) {
-            // Tachikoma box art - green
-            render_colored(start_y + i, x, logo[i], 2);
+            // Tachikoma box art - nord blue accent
+            render_colored(start_y + i, x, logo[i], theme_pair(ThemeColor::Hi));
         } else if (i == 7) {
-            // "TACHIKOMA" title - cyan
-            render_colored(start_y + i, x, logo[i], 3);
+            // "TACHIKOMA" title - frost bold
+            render_bold(start_y + i, x, logo[i], theme_pair(ThemeColor::Title));
         } else {
-            // Subtitle - yellow
-            render_colored(start_y + i, x, logo[i], 4);
+            // Subtitle - muted
+            render_colored(start_y + i, x, logo[i], theme_pair(ThemeColor::Muted));
         }
     }
 
@@ -75,14 +76,14 @@ void render_startup_screen() {
 
     for (const auto& msg : messages) {
         if (msg_y < term_height) {
-            // Color based on prefix
-            int cp = 1; // default
+            // Color based on prefix (theme-mapped)
+            int cp = theme_pair(ThemeColor::Muted);
             if (msg.find("[SCAN]") != std::string::npos) {
-                cp = 6; // blue
+                cp = theme_pair(ThemeColor::Hi);
             } else if (msg.find("[READY]") != std::string::npos) {
-                cp = 2; // green
+                cp = theme_pair(ThemeColor::Ok);
             } else if (msg.find("[ERROR]") != std::string::npos) {
-                cp = 5; // red
+                cp = theme_pair(ThemeColor::Crit);
             }
 
             render_colored(msg_y, 2, msg, cp);
@@ -92,8 +93,8 @@ void render_startup_screen() {
         }
     }
 
-    // Wait for key press
-    render_text(term_height - 1, 2, "Press any key to continue...");
+    // Wait for key press (hint in accent blue)
+    render_colored(term_height - 1, 2, "Press any key to continue...", theme_pair(ThemeColor::Hi));
     ::refresh();
     wait_for_key();
     clear_window();

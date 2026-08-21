@@ -1,5 +1,6 @@
 #include "ui/tree_view.hpp"
 #include "ui/renderer.hpp"
+#include "ui/theme.hpp"
 #include "filesystem/size_estimator.hpp"
 #include <algorithm>
 #include <functional>
@@ -91,34 +92,48 @@ void TreeView::render_item(const VisibleItem& item, int y, bool is_selected, con
         render_char(y, x_start_ + (d * INDENT_STEP), '|');
     }
 
-    // Icon and color
-    const char* icon = nullptr;
-    int color = 1;
+    // btop-style selection: fill the full row with the theme's slate background,
+    // then draw bold text on top.
+    if (is_selected) {
+        const int sw = screen_width();
+        if (sw > 2) fill_row(y, 1, sw - 2, theme_pair(ThemeColor::SelText));
+    }
 
+    auto text_cp  = [is_selected]() { return is_selected ? theme_pair(ThemeColor::SelText) : theme_pair(ThemeColor::Font); };
+    auto guide_cp = [is_selected]() { return is_selected ? theme_pair(ThemeColor::SelAccent) : theme_pair(ThemeColor::Muted); };
+
+    // Indentation guides (subtle, never louder than the content).
+    for (int d = 0; d < depth; ++d) {
+        render_colored(y, x_start_ + (d * INDENT_STEP), "|", guide_cp());
+    }
+
+    // Icon and color per entry type.
+    const char* icon = " ";
+    int icon_cp = theme_pair(ThemeColor::Muted);
     switch (entry.type) {
         case filesystem::Entry::Type::Directory:
             icon = entry.expanded ? "+" : ">";
-            color = 6;
+            icon_cp = is_selected ? theme_pair(ThemeColor::SelText) : theme_pair(ThemeColor::Hi);
             break;
         case filesystem::Entry::Type::File:
             icon = " ";
-            color = 1;
             break;
         case filesystem::Entry::Type::Symlink:
             icon = "@";
-            color = 7;
+            icon_cp = is_selected ? theme_pair(ThemeColor::SelText) : theme_pair(ThemeColor::Title);
             break;
         default:
             icon = "?";
             break;
     }
 
-    if (is_selected) {
-        color = 8;
-    }
+    auto draw_text = [&](int yy, int xx, const std::string& t, int cp) {
+        if (is_selected) render_bold(yy, xx, t, cp);
+        else             render_colored(yy, xx, t, cp);
+    };
 
     // Render icon and name (name truncated so it never collides with the size column)
-    render_colored(y, pos, icon, color);
+    draw_text(y, pos, icon, icon_cp);
 
     int name_x = pos + ICON_W;
     int name_budget = layout.size_x - name_x - 1; // leave a gap before the size field
@@ -129,11 +144,13 @@ void TreeView::render_item(const VisibleItem& item, int y, bool is_selected, con
     if (static_cast<int>(name.length()) > name_budget) {
         name = truncate(name, name_budget);
     }
-    render_colored(y, name_x, name, color);
+    draw_text(y, name_x, name, text_cp());
 
     // Size value: directories show their true recursive total.
     uint64_t size_val = (entry.type == filesystem::Entry::Type::Directory)
         ? entry.total_size : entry.size;
+    int value_cp = is_selected ? theme_pair(ThemeColor::SelAccent) : theme_pair(ThemeColor::Title);
+    int bar_cp   = is_selected ? theme_pair(ThemeColor::SelText) : theme_pair(ThemeColor::Hi);
 
     if (layout.size_x >= x_start_ + layout.size_field) {
         // Right-align the size text inside the shared, fixed-width field so all
@@ -142,7 +159,7 @@ void TreeView::render_item(const VisibleItem& item, int y, bool is_selected, con
         while (static_cast<int>(size_str.length()) < layout.size_field) {
             size_str = " " + size_str;
         }
-        render_colored(y, layout.size_x, size_str, is_selected ? 8 : 3);
+        draw_text(y, layout.size_x, size_str, value_cp);
 
         // Size bar: filled proportionally to the largest visible entry.
         int bar_x = layout.size_x + layout.size_field;
@@ -157,9 +174,10 @@ void TreeView::render_item(const VisibleItem& item, int y, bool is_selected, con
                 for (int i = 0; i < filled && i < bar_w; ++i) {
                     bar[i] = '#';
                 }
-                render_colored(y, bar_x, bar, is_selected ? 8 : 4);
+                draw_text(y, bar_x, bar, bar_cp);
             } else if (entry.type == filesystem::Entry::Type::Directory) {
-                render_colored(y, bar_x, "...", 4); // size still being estimated
+                // size still being estimated
+                render_colored(y, bar_x, "...", guide_cp());
             }
         }
     }

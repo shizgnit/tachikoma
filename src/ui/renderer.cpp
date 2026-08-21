@@ -19,6 +19,33 @@ void render_colored(int y, int x, const std::string& text, int cp) {
     attrset(A_NORMAL);
 }
 
+void render_bold(int y, int x, const std::string& text, int cp) {
+    attrset(A_BOLD | COLOR_PAIR(cp));
+    mvaddstr(y, x, text.c_str());
+    attrset(A_NORMAL);
+}
+
+void fill_row(int y, int x, int width, int cp) {
+    if (width <= 0) return;
+    std::string cells(static_cast<size_t>(width), ' ');
+    attrset(COLOR_PAIR(cp));
+    mvaddstr(y, x, cells.c_str());
+    attrset(A_NORMAL);
+}
+
+void draw_box_top(int y, int x, int width, int cp) {
+    if (width < 2) return;
+    if (cp >= 0) attrset(COLOR_PAIR(cp));
+    mvaddch(y, x, '+');
+    for (int i = 1; i < width - 1; ++i) mvaddch(y, x + i, '-');
+    mvaddch(y, x + width - 1, '+');
+    attrset(A_NORMAL);
+}
+
+void draw_box_bottom(int y, int x, int width, int cp) {
+    draw_box_top(y, x, width, cp); // same shape on the bottom edge
+}
+
 void render_char(int y, int x, char ch) {
     attrset(A_NORMAL);
     mvaddch(y, x, ch);
